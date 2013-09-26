@@ -132,13 +132,13 @@
     // #endif
     preprocess: true,
     // Preprocess add macro function
-    preprocessAddMacro: defaultAddMacro,
+    addMacro: defaultAddMacro,
     // Preprocess get macro function
-    preprocessGetMacro: defaultGetMacro,
+    getMacro: defaultGetMacro,
     // Preprocess undefine macro function. To delete a macro
-    preprocessUndefineMacro: defaultUndefineMacro,
+    undefineMacro: defaultUndefineMacro,
     // Preprocess is macro function
-    preprocessIsMacro: defaultIsMacro,
+    isMacro: defaultIsMacro,
     // Turn off lineNoInErrorMessage to exclude line number in error messages
     // Needs to be on to run test cases
     lineNoInErrorMessage: true
@@ -943,12 +943,12 @@
         preprocesSkipRestOfLine();
         var macroString = input.slice(start, tokPos);
         macroString = macroString.replace(/\\/g, " ");
-        options.preprocessAddMacro(new Macro(macroIdentifier, macroString, parameters));
+        options.addMacro(new Macro(macroIdentifier, macroString, parameters));
         break;
 
       case _preUndef:
         preprocessReadToken();
-        options.preprocessUndefineMacro(preprocessGetIdent());
+        options.undefineMacro(preprocessGetIdent());
         preprocesSkipRestOfLine();
         break;
 
@@ -972,7 +972,7 @@
           preIfLevel++;
           preprocessReadToken();
           var ident = preprocessGetIdent();
-          var test = options.preprocessGetMacro(ident);
+          var test = options.getMacro(ident);
           if (!test) {
             preNotSkipping = false
             preprocessSkipToElseOrEndif();
@@ -988,7 +988,7 @@
           preIfLevel++;
           preprocessReadToken();
           var ident = preprocessGetIdent();
-          var test = options.preprocessGetMacro(ident);
+          var test = options.getMacro(ident);
           if (test) {
             preNotSkipping = false
             preprocessSkipToElseOrEndif();
@@ -1083,11 +1083,11 @@
       },
       Identifier: function(node, st, c) {
         var name = node.name,
-            macro = options.preprocessGetMacro(name);
+            macro = options.getMacro(name);
         return (macro && parseInt(macro.macro)) || 0;
       },
       DefinedExpression: function(node, st, c) {
-        return !!options.preprocessGetMacro(node.id.name);
+        return !!options.getMacro(node.id.name);
       }
     }, {});
   }
@@ -1654,8 +1654,8 @@
         }
       }
       // Does the word match against any of the known macro names
-      if (!macro && options.preprocessIsMacro(word))
-        macro = options.preprocessGetMacro(word);
+      if (!macro && options.isMacro(word))
+        macro = options.getMacro(word);
       if (macro) {
         var macroStart = tokStart;
         var parameters;
