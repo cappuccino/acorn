@@ -1000,7 +1000,6 @@
           expect(_comma, "Expected ',' between macro parameters"); else first = false;
         var parameter = {
           identifier: parseIdent().name,
-          index: parameters.length,
           expand: false,
           stringify: false
         };
@@ -1535,6 +1534,9 @@
 
   var Macro = exports.Macro = function Macro(ident, parameters, parameterMap, isFunction, tokens) {
     this.identifier = ident;
+    // Tell the parameter its index, so when we lookup a parameter by name, we know its positional index
+    for (var i = 0; i < parameters.length; ++i)
+      parameters[i].index = i;
     this.parameters = parameters;
     this.parameterMap = parameterMap;
     this.isFunction = isFunction;
