@@ -281,6 +281,12 @@
 
   var tokType, tokVal;
 
+  // When preprocessing, sometimes we have to construct a string,
+  // and a string node needs a raw value which includes the quotes.
+  // So we sometimes set this variable when constructing a string.
+
+  var tokRaw;
+
   // When preprocessing, we need to know if the last token was eol.
 
   var lastTokType;
@@ -452,12 +458,12 @@
   var _preElseIf = {keyword: "elif"};
   var _prePragma = {keyword: "pragma"};
   var _preDefined = {keyword: "defined"};
-  var _preBackslash = {keyword: "\\"};
 
   // Special tokens used within a macro body only
 
+  var _preLineContinuation = {type: "\\"};
+  var _preTokenPaste = {type: "##"};
   var _stringifiedName = {type: "stringified name"};
-  var _tokenPaste = {type: "##"};
 
   // Map keyword names to token types.
 
@@ -960,6 +966,7 @@
     tokEndLoc = t.endLoc;
     tokType = t.type;
     tokVal = t.value;
+    tokRaw = t.raw;
     if (options.trackComments) {
       tokCommentsBefore = t.commentsBefore
       tokCommentsAfter = t.commentsAfter;
@@ -1014,12 +1021,15 @@
     // Read tokens until eof or eol that is not preceded by '\'
     var tokens = [];
     for (;;) {
-      if (tokType === _preBackslash) {
+      if (tokType === _preLineContinuation) {
         next();
         expect(_eol, "Expected EOL after '\\'");
       }
-      else if (tokType === _eol || tokType === _eof)
+      else if (tokType === _eol || tokType === _eof) {
+        // We have to set lastTokType so the next readToken() will know the previous token was eol/eof
+        lastTokType = tokType;
         break;
+      }
       var token = makeToken();
       // If the token is a parameter name, mark it for expansion/stringification
       if ((token.type === _name || token.type === _stringifiedName) &&
@@ -1134,14 +1144,20 @@
         break;
 
       default:
-        raise(preTokStart, "Invalid preprocessing directive");
-        preprocesSkipRestOfLine();
-        // Return the complete line as a token to make it possible to create a PreProcessStatement if we are between two statements
-        finishToken(_preprocess);
-        //raise(tokPos, "Invalid preprocessing directive '" + (preTokType.keyword || preTokVal) + "' " + input.slice(tokStart, tokPos));
+        raise(tokStart, "Invalid preprocessing directive");
     }
 
     preprocessorState = preprocessorState_none;
+  }
+
+  function readToken_stringify() {
+    skipSpace();
+    next();
+    // The next token should be a name
+    if (tokType === _name)
+      return finishToken(_stringifiedName, tokVal);
+    else
+      raise("# (stringify) must be followed by a name");
   }
 
   function preprocessEvalExpression(expr) {
@@ -1260,17 +1276,31 @@
     case 35: // '#'
       ++tokPos;
       if (options.preprocess) {
-        // Preprocessor directives are only valid at the beginning of the line
-        if (tokenStream.length > 0 && lastTokType !== _eol)
-          raise(--tokPos, "Preprocessor directives may only be used at the beginning of a line");
-        finishToken(_preprocess);
-        return readToken_preprocess();
+        // # within a macro body might be a stringification or it might be ##
+        if (preprocessorState === preprocessorState_macroBody) {
+          code = input.charCodeAt(tokPos);
+          if (code === 35) {
+            ++tokPos;
+            return finishToken(_preTokenPaste);
+          }
+          else
+            return readToken_stringify();
+        }
+        if (preprocessorState === preprocessorState_none) {
+          // Preprocessor directives are only valid at the beginning of the line
+          if (tokenStream.length > 0 && lastTokType !== _eol)
+            raise(--tokPos, "Preprocessor directives may only be used at the beginning of a line");
+          finishToken(_preprocess);
+          return readToken_preprocess();
+        }
       }
       return false;
 
     case 92: // '\'
-      if (preprocessorState === preprocessorState_macroBody)
-        return finishOp(_preBackslash, 1);
+      if (preprocessorState === preprocessorState_macroBody) {
+        ++tokPos;
+        return finishToken(_preLineContinuation, "\\");
+      }
       else
         return false;
     }
@@ -1278,7 +1308,7 @@
     if (preprocessorState > preprocessorState_none && (code === 10 || code === 13 || code === 8232 || code === 8233)) {
       // eol terminates a preprocessor statement, unless we are in a macro body
       // and the previous token was a backslash.
-      if (preprocessorState !== preprocessorState_macroBody || tokType !== _preBackslash)
+      if (preprocessorState !== preprocessorState_macroBody || tokType !== _preLineContinuation)
         preprocessorState = preprocessorState_none;
       return finishOp(_eol, code === 13 && input.charCodeAt(tokPos + 1) === 10 ? 2 : 1);
     }
@@ -1746,27 +1776,71 @@
     return args;
   }
 
-  function stringifyTokens(tokens) {
-    var str = '"';
-    for (var i = 0; i < tokens.length; ++i) {
-      if (tokens[i].type === _string) {
-        // Escape surrounding quotes and backslashes within the string
-        str += '\\"';
-        str += tokens[i].value.replace("\\", "\\\\");
-        str += '\\"';
-      } else {
-        str += input.slice(tokens[i].start, tokens[i].end);
-      }
-      if (i < tokens.length - 1)
-        str += " ";
+  function escapeNonPrintingChar(c) {
+    switch (c) {
+      case '"': return '\\"';
+      case "\n": return "\\n";
+      case "\r": return "\\r";
+      case "\t": return "\\t";
+      case "\\": return "\\\\";
+      case "\b": return "\\b";
+      case "\v": return "\\v";
+      case "\u00A0": return "\\u00A0";
+      case "\u2028": return "\\u2028";
+      case "\u2029": return "\\u2029";
+      default: return c;
     }
-    str += '"';
+  }
+
+  var whitespaceRegex = /\s+/g;
+  var stringRegex = /(['"])((?:[^\\\"]+|\\.)*)\1/g;
+
+  function stringifyTokens(tokens) {
+    var start = tokens[0].start;
+    var end = tokens[tokens.length - 1].end;
+    // gcc spec says leading and trailing whitespace is trimmed
+    var str = input.slice(start, end).trim();
+    var result = "";
+    var i = 0;
+    while (i < str.length) {
+      var c = str.charAt(i);
+      // gcc spec says any sequence of whitespace is converted to a single space
+      var match = whitespaceRegex.exec(c);
+      if (match) {
+        whitespaceRegex.lastIndex = i;
+        match = whitespaceRegex.exec(str);
+        result += " ";
+        i = whitespaceRegex.lastIndex;
+        whitespaceRegex.lastIndex = 0;
+      }
+      else if (c === '"' || c === "'") {
+        stringRegex.lastIndex = i;
+        var match = stringRegex.exec(str);
+        if (match === null) {
+          // If the regex fails, the string was unterminated, so take whatever is left and stop
+          result += str.slice(i);
+          break;
+        } else {
+          i = stringRegex.lastIndex;
+          // A literal string has to escape double quotes, non-printing characters and backslashes
+          var escaped = match[2].replace(/["\n\r\t\\\b\v\f\u00A0\u2028\u2029]/g, escapeNonPrintingChar);
+          // Finally enclose the result in backslashed quotes
+          var quote = c === '"' ? '\\"' : "'";
+          result += quote + escaped + quote;
+        }
+      }
+      else {
+        result += c;
+        ++i;
+      }
+    }
     // Construct a new string token that spans the entire range of the source
     var token = {
-      start: tokens[0].start,
-      end: tokens[tokens.length - 1].end,
+      start: start,
+      end: end,
       type: _string,
-      value: str
+      value: result,
+      raw: '"' + result + '"'
     };
     return token;
   }
@@ -3127,7 +3201,7 @@
   function parseStringNumRegExpLiteral() {
     var node = startNode();
     node.value = tokVal;
-    node.raw = input.slice(tokStart, tokEnd);
+    node.raw = tokRaw === undefined ? input.slice(tokStart, tokEnd) : tokRaw;
     next();
     return finishNode(node, "Literal");
   }
