@@ -988,7 +988,7 @@
     var macroIdentifierEnd = tokEnd;
     var macroIdentifier = parseIdent();
     var parameters = [];
-    var parameterMap = {};
+    var parameterMap = Object.create(null);  // Don't inherit from Object
     var isFunction = false;
     // '(' Must follow directly after identifier to be a valid macro with parameters
     if (input.charCodeAt(macroIdentifierEnd) === 40) { // '('
@@ -1545,6 +1545,10 @@
     return this.parameterMap[identifier] !== undefined;
   }
 
+  Macro.prototype.getParameterByName = function(identifier) {
+    return this.parameterMap[identifier];
+  }
+
   function pushMacro(macro, context) {
     finishToken(_name, macro.identifier);
     if (context !== undefined) {
@@ -1774,7 +1778,7 @@
         var token = macro.tokens[i];
         var parameter;
         if ((token.type === _name || token.type === _stringifiedName) &&
-            (parameter = macro.parameterMap[token.value]) !== undefined)
+            (parameter = macro.getParameterByName(token.value)) !== undefined)
         {
           if (token.type === _name)
             Array.prototype.push.apply(argTokens, args[parameter.index].expandedTokens);
