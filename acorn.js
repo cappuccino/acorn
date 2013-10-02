@@ -1608,14 +1608,14 @@
     var savedState = preprocessorState;
     preprocessorState = preprocessorState_macroExpansion;
     next();
-    var isMacro = true;
+    var isMacroCall = true;
     var args = null;
     if (macro.isFunction) {
       // A function macro that has no arguments is treated as a name
       if (eat(_parenL)) {
         args = parseMacroArguments(macro, context);
       } else {
-        isMacro = false;
+        isMacroCall = false;
         tokenStream.push(nameToken);
       }
     }
@@ -1631,11 +1631,11 @@
         --tokenStreamIndex;
       }
     }
-    if (isMacro)
+    if (isMacroCall)
       expandMacroArguments(macro, args, expandedTokens);
     preprocessorState = savedState;
     popMacro(context);
-    return isMacro;
+    return isMacroCall;
   }
 
   function parseMacroArguments(macro, context) {
