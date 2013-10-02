@@ -45,9 +45,23 @@
 
   var options, input, inputLen, sourceFile;
 
+  // When preprocessing, these key functions are routed first to the source versions,
+  // which read from the input. On the second pass, they are routed to the postprocess
+  // versions, which read tokens from the preprocess token list.
+
+  var readToken, skipSpace, setStrict;
+
+  function emptyFunction() { }
+
   exports.parse = function(inpt, opts) {
     input = String(inpt); inputLen = input.length;
     setOptions(opts);
+    // By default, we read from source (input)
+    readToken = sourceReadToken;
+    skipSpace = sourceSkipSpace;
+    setStrict = sourceSetStrict;
+    if (options.preprocess)
+      preprocess(inpt, opts);
     initTokenState();
     return parseTopLevel(options.program);
   };
@@ -131,14 +145,11 @@
     // #else
     // #endif
     preprocess: true,
-    // Preprocess add macro function
     addMacro: defaultAddMacro,
-    // Preprocess get macro function
     getMacro: defaultGetMacro,
-    // Preprocess undefine macro function. To delete a macro
     undefineMacro: defaultUndefineMacro,
-    // Preprocess is macro function
     isMacro: defaultIsMacro,
+
     // Turn off lineNoInErrorMessage to exclude line number in error messages
     // Needs to be on to run test cases
     lineNoInErrorMessage: true
@@ -151,25 +162,24 @@
     sourceFile = options.sourceFile || null;
   }
 
+  // Contains a hash of macro names to Macro objects.
+
   var macros;
-  var macrosIsPredicate;
 
   function defaultAddMacro(macro) {
     macros[macro.identifier] = macro;
-    macrosIsPredicate = null;
   }
 
-  function defaultGetMacro(macroIdentifier) {
-    return macros[macroIdentifier];
+  function defaultGetMacro(name) {
+    return macros[name];
   }
 
-  function defaultUndefineMacro(macroIdentifier) {
-    delete macros[macroIdentifier];
-    macrosIsPredicate = null;
+  function defaultUndefineMacro(name) {
+    delete macros[name];
   }
 
-  function defaultIsMacro(macroIdentifier) {
-    return (macrosIsPredicate || (macrosIsPredicate = makePredicate(Object.keys(macros).join(" "))))(macroIdentifier);
+  function defaultIsMacro(name) {
+    return macros[name] !== undefined;
   }
 
   // The `getLineInfo` function is mostly useful when the
@@ -197,18 +207,36 @@
   // very modular. Performing another parse or call to `tokenize` will
   // reset the internal state, and invalidate existing tokenizers.
 
+  function makeToken() {
+    var t = {
+      start: tokStart,
+      end: tokEnd,
+      startLoc: tokStartLoc,
+      endLoc: tokEndLoc,
+      type: tokType,
+      value: tokVal
+    };
+    if (options.trackComments) {
+      t.commentsBefore = tokCommentsBefore;
+      t.commentsAfter = tokCommentsAfter;
+      t.lastCommentsAfter = lastTokCommentsAfter;
+    }
+    if (options.trackSpaces) {
+      t.spacesBefore = tokSpacesBefore;
+      t.spacesAfter = tokSpacesAfter;
+      t.lastSpacesAfter = lastTokSpacesAfter;
+    }
+    return t;
+  }
+
   exports.tokenize = function(inpt, opts) {
     input = String(inpt); inputLen = input.length;
     setOptions(opts);
     initTokenState();
 
-    var t = {};
     function getToken(forceRegexp) {
       readToken(forceRegexp);
-      t.start = tokStart; t.end = tokEnd;
-      t.startLoc = tokStartLoc; t.endLoc = tokEndLoc;
-      t.type = tokType; t.value = tokVal;
-      return t;
+      return makeToken();
     }
     getToken.jumpTo = function(pos, reAllowed) {
       tokPos = pos;
@@ -253,6 +281,10 @@
 
   var tokType, tokVal;
 
+  // When preprocessing, we need to know if the last token was eol.
+
+  var lastTokType;
+
   // These are used to hold arrays of comments when
   // `options.trackComments` is true.
 
@@ -278,11 +310,6 @@
 
   var tokCurLine, tokLineStart;
 
-  // Same as input but for the current token. If options.preprocess is used
-  // this can differ due to macros.
-
-  var tokInput, preTokInput;
-
   // These store the position of the previous token, which is useful
   // when finishing a node and assigning its `end` position.
 
@@ -301,13 +328,28 @@
 
   var inFunction, labels, strict;
 
-  // These are used by the preprocess tokenizer.
+  // When preprocessing, two passes are done: preprocessing and parsing.
 
-  var preTokPos, preTokType, preTokVal, preTokStart, preTokEnd;
-  var preLastStart, preLastEnd;
-  var preprocessStack = [];
-  var preprocessStackLastItem;
-  var preprocessMacroParameterListMode = false;
+  // During the preprocessor pass, the tokens are stored in this array.
+  // It is switch to point to macro arguments and macro body token streams
+  // when expanding macros.
+
+  var tokenStream;
+
+  // When reading from a token stream, this index points to the next
+  // token that will be returned from the current token stream.
+
+  var tokenStreamIndex;
+
+  // When parsing a preprocessor statement, special rules apply.
+
+  var isPreprocessorStatement;
+
+  // When we are within a preprocessor statement, expanding a macro, or skipping to
+  // the #else or #endif of a conditional preprocessor block, tokens are read but
+  // no comments or spaces are tracked.
+
+  var preprocessing;
 
   // This function is used to raise exceptions on parse errors. It
   // takes either a `{line, column}` object or an offset integer (into
@@ -346,7 +388,7 @@
   // make them recognizeable when debugging.
 
   var _num = {type: "num"}, _regexp = {type: "regexp"}, _string = {type: "string"};
-  var _name = {type: "name"}, _eof = {type: "eof"};
+  var _name = {type: "name"}, _eof = {type: "eof"}, _eol = {type: "eol"};
 
   // Keyword tokens. The `keyword` property (also used in keyword-like
   // operators) indicates that the token originated from an
@@ -411,10 +453,12 @@
   var _preElseIf = {keyword: "elif"};
   var _prePragma = {keyword: "pragma"};
   var _preDefined = {keyword: "defined"};
-  var _preBackslash = {keyword: "\\"}
+  var _preBackslash = {keyword: "\\"};
 
-  var _preprocessParamItem = {type: "preprocessParamItem"}
-  var _preprocessSkipLine = {type: "skipLine"}
+  // Special tokens used within a macro body only
+
+  var _stringifiedName = {type: "stringified name"};
+  var _tokenPaste = {type: "##"};
 
   // Map keyword names to token types.
 
@@ -474,14 +518,14 @@
   // binary operators with a very low precedence, that should result
   // in AssignmentExpression nodes.
 
-  var _slash = {binop: 10, beforeExpr: true, preprocess: true}, _eq = {isAssign: true, beforeExpr: true, preprocess: true};
-  var _assign = {isAssign: true, beforeExpr: true}, _plusmin = {binop: 9, prefix: true, beforeExpr: true, preprocess: true};
+  var _slash = {binop: 10, beforeExpr: true}, _eq = {isAssign: true, beforeExpr: true};
+  var _assign = {isAssign: true, beforeExpr: true}, _plusmin = {binop: 9, prefix: true, beforeExpr: true};
   var _incdec = {postfix: true, prefix: true, isUpdate: true}, _prefix = {prefix: true, beforeExpr: true};
-  var _bin1 = {binop: 1, beforeExpr: true, preprocess: true}, _bin2 = {binop: 2, beforeExpr: true, preprocess: true};
-  var _bin3 = {binop: 3, beforeExpr: true, preprocess: true}, _bin4 = {binop: 4, beforeExpr: true, preprocess: true};
-  var _bin5 = {binop: 5, beforeExpr: true, preprocess: true}, _bin6 = {binop: 6, beforeExpr: true, preprocess: true};
-  var _bin7 = {binop: 7, beforeExpr: true, preprocess: true}, _bin8 = {binop: 8, beforeExpr: true, preprocess: true};
-  var _bin10 = {binop: 10, beforeExpr: true, preprocess: true};
+  var _bin1 = {binop: 1, beforeExpr: true}, _bin2 = {binop: 2, beforeExpr: true};
+  var _bin3 = {binop: 3, beforeExpr: true}, _bin4 = {binop: 4, beforeExpr: true};
+  var _bin5 = {binop: 5, beforeExpr: true}, _bin6 = {binop: 6, beforeExpr: true};
+  var _bin7 = {binop: 7, beforeExpr: true}, _bin8 = {binop: 8, beforeExpr: true};
+  var _bin10 = {binop: 10, beforeExpr: true};
 
   // Provide access to the token types for external users of the
   // tokenizer.
@@ -566,9 +610,10 @@
 
   var isKeywordObjJ = makePredicate("IBAction IBOutlet byte char short int long unsigned signed id");
 
-  // The preprocessor keywords.
+  // The preprocessor keywords and tokens.
 
   var isKeywordPreprocessor = makePredicate("define pragma if ifdef ifndef else elif endif defined");
+  var preprocessorTokens = [_preIf, _preIfdef, _preIfndef, _preElse, _preElseIf, _preEndif];
 
   // ## Character categories
 
@@ -628,7 +673,6 @@
   // Reset the token state. Used at the start of a parse.
 
   function initTokenState() {
-    macros = Object.create(null);
     tokCurLine = 1;
     tokPos = tokLineStart = 0;
     tokRegexpAllowed = true;
@@ -642,49 +686,13 @@
   // after the token, so that the next one's `tokStart` will point at
   // the right position.
 
-  var preprocessorTokens = [_preIf, _preIfdef, _preIfndef, _preElse, _preElseIf, _preEndif];
-
   function finishToken(type, val) {
-    // FIXME: Do we need to do this? It is very time consuming.
-    // If we get any of the preprocessor tokens skip it and read next
-    var preprocess = options.preprocess;
-    if (preprocess && (type in preprocessorTokens)) {
-      console.error("Acorn: ERROR when finishing token '" + JSON.stringify(type) + "' at file position " + tokPos + ". Please report this error on http://github.com/mrcarlberg/acorn. Trying to recover...");
-      return readToken();
-    }
     tokEnd = tokPos;
     if (options.locations) tokEndLoc = new line_loc_t;
+    lastTokType = tokType;
     tokType = type;
-    skipSpace();
-    if (preprocess && input.charCodeAt(tokPos) === 35 && input.charCodeAt(tokPos + 1) === 35) { // '##'
-      var val1 = type === _name ? val : type.keyword;
-      tokPos += 2;
-      if (val1) {
-        skipSpace();
-        readToken();
-        var val2 = tokType === _name ? tokVal : tokType.keyword;
-        if (val2) {
-          var concat = "" + val1 + val2,
-              code = concat.charCodeAt(0),
-              tok;
-          if (isIdentifierStart(code))
-            tok = readWord(concat) !== false;
-
-          // We might got a word token from the concatenation
-          if (tok) return tok;
-          // FIXME: Is not using the concatenated token
-          tok = getTokenFromCode(code, finishToken);
-          if (tok === false) {
-            unexpected();
-          }
-          // We have now got another type of token from the concatenation
-          return tok;
-        } else {
-          // FIXME: Second token was not of right type. Save second token and return the first. When readToken is called again return the second.
-        }
-      }
-    }
     tokVal = val;
+    skipSpace();
     lastTokCommentsAfter = tokCommentsAfter;
     lastTokSpacesAfter = tokSpacesAfter;
     tokCommentsAfter = tokComments;
@@ -692,7 +700,7 @@
     tokRegexpAllowed = type.beforeExpr;
   }
 
-  function skipBlockComment(lastIsNewlinePos, dontTrack) {
+  function skipBlockComment(lastIsNewlinePos) {
     var startLoc = options.onComment && options.locations && new line_loc_t;
     var start = tokPos, end = input.indexOf("*/", tokPos += 2);
     if (end === -1) raise(tokPos - 2, "Unterminated comment");
@@ -705,16 +713,15 @@
         tokLineStart = match.index + match[0].length;
       }
     }
-    if (!dontTrack) {
-      if (options.onComment)
-        options.onComment(true, input.slice(start + 2, end), start, tokPos,
-                          startLoc, options.locations && new line_loc_t);
-      if (options.trackComments)
-        (tokComments || (tokComments = [])).push(input.slice(lastIsNewlinePos !== undefined && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
-    }
+    if (preprocessing) return;
+    if (options.onComment)
+      options.onComment(true, input.slice(start + 2, end), start, tokPos,
+                        startLoc, options.locations && new line_loc_t);
+    if (options.trackComments)
+      (tokComments || (tokComments = [])).push(input.slice(lastIsNewlinePos !== undefined && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
   }
 
-  function skipLineComment(lastIsNewlinePos, dontTrack) {
+  function skipLineComment(lastIsNewlinePos) {
     var start = tokPos;
     var startLoc = options.onComment && options.locations && new line_loc_t;
     var ch = input.charCodeAt(tokPos+=2);
@@ -722,26 +729,12 @@
       ++tokPos;
       ch = input.charCodeAt(tokPos);
     }
-    if (!dontTrack) {
-      if (options.onComment)
-        options.onComment(false, input.slice(start + 2, tokPos), start, tokPos,
-                          startLoc, options.locations && new line_loc_t);
-      if (options.trackComments)
-        (tokComments || (tokComments = [])).push(input.slice(lastIsNewlinePos !== undefined && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
-    }
-  }
-
-  function preprocesSkipRestOfLine() {
-    var ch = input.charCodeAt(tokPos);
-    var last;
-    // If the last none whitespace character is a '\' the line will continue on the the next line.
-    // Here we break the way gcc works as it joins the lines first and then tokenize it. Because of
-    // this we can't have a newline in the middle of a word.
-    while (tokPos < inputLen && ((ch !== 10 && ch !== 13 && ch !== 8232 && ch !== 8233) || last === 92)) { // White space and '\'
-      if (ch != 32 && ch != 9 && ch != 160 && (ch < 5760 || !nonASCIIwhitespaceNoNewLine.test(String.fromCharCode(ch))))
-        last = ch;
-      ch = input.charCodeAt(++tokPos);
-    }
+    if (preprocessing) return;
+    if (options.onComment)
+      options.onComment(false, input.slice(start + 2, tokPos), start, tokPos,
+                        startLoc, options.locations && new line_loc_t);
+    if (options.trackComments)
+      (tokComments || (tokComments = [])).push(input.slice(lastIsNewlinePos !== undefined && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
   }
 
   // Called at the start of the parse and after every token. Skips
@@ -750,7 +743,7 @@
   // `options.trackSpaces` is on, will store the last skipped spaces in
   // `tokSpaces`.
 
-  function skipSpace() {
+  function sourceSkipSpace() {
     tokComments = null;
     tokSpaces = null;
     var spaceStart = tokPos,
@@ -760,6 +753,8 @@
       if (ch === 32) { // ' '
         ++tokPos;
       } else if (ch === 13) {
+        if (isPreprocessorStatement)
+          break;
         lastIsNewlinePos = tokPos;
         ++tokPos;
         var next = input.charCodeAt(tokPos);
@@ -770,17 +765,23 @@
           ++tokCurLine;
           tokLineStart = tokPos;
         }
+        // Inform the preprocessor that we saw eol
+        lastTokType = _eol;
       } else if (ch === 10) {
+        if (isPreprocessorStatement)
+          break;
         lastIsNewlinePos = tokPos;
         ++tokPos;
         ++tokCurLine;
         tokLineStart = tokPos;
+        // Inform the preprocessor that we saw eol
+        lastTokType = _eol;
       } else if (ch > 8 && ch < 14) {
         ++tokPos;
       } else if (ch === 47) { // '/'
         var next = input.charCodeAt(tokPos+1);
         if (next === 42) { // '*'
-          if (options.trackSpaces)
+          if (options.trackSpaces && !preprocessing)
             (tokSpaces || (tokSpaces = [])).push(input.slice(spaceStart, tokPos));
           skipBlockComment(lastIsNewlinePos);
           spaceStart = tokPos;
@@ -794,23 +795,6 @@
         ++tokPos;
       } else if (ch >= 5760 && nonASCIIwhitespace.test(String.fromCharCode(ch))) {
         ++tokPos;
-      } else if (tokPos >= inputLen) {
-        if (options.preprocess && preprocessStack.length) {
-          // If we are at the end of the input inside a macro continue at last position
-          var lastItem = preprocessStack.pop();
-          tokPos = lastItem.end;
-          tokInput = input = lastItem.input;
-          inputLen = lastItem.inputLen;
-          tokStart= lastItem.tokStart;
-          lastEnd = lastItem.lastEnd;
-          lastStart = lastItem.lastStart;
-          // Set the last item
-          var lastIndex = preprocessStack.length;
-          preprocessStackLastItem = lastIndex ? preprocessStack[lastIndex - 1] : null;
-          skipSpace();
-        } else {
-          break;
-        }
       } else {
         break;
       }
@@ -829,56 +813,56 @@
   // The `forceRegexp` parameter is used in the one case where the
   // `tokRegexpAllowed` trick does not work. See `parseStatement`.
 
-  function readToken_dot(code, finisher) {
+  function readToken_dot(code) {
     var next = input.charCodeAt(tokPos+1);
-    if (next >= 48 && next <= 57) return readNumber(String.fromCharCode(code), finisher);
+    if (next >= 48 && next <= 57) return readNumber(String.fromCharCode(code));
     if (next === 46 && options.objj && input.charCodeAt(tokPos+2) === 46) { //'.'
       tokPos += 3;
-      return finisher(_dotdotdot);
+      return finishToken(_dotdotdot);
     }
     ++tokPos;
-    return finisher(_dot);
+    return finishToken(_dot);
   }
 
-  function readToken_slash(finisher) { // '/'
+  function readToken_slash() { // '/'
     var next = input.charCodeAt(tokPos+1);
     if (tokRegexpAllowed) {++tokPos; return readRegexp();}
-    if (next === 61) return finishOp(_assign, 2, finisher);
-    return finishOp(_slash, 1, finisher);
+    if (next === 61) return finishOp(_assign, 2);
+    return finishOp(_slash, 1);
   }
 
-  function readToken_mult_modulo(finisher) { // '%*'
+  function readToken_mult_modulo() { // '%*'
     var next = input.charCodeAt(tokPos+1);
-    if (next === 61) return finishOp(_assign, 2, finisher);
-    return finishOp(_bin10, 1, finisher);
+    if (next === 61) return finishOp(_assign, 2);
+    return finishOp(_bin10, 1);
   }
 
-  function readToken_pipe_amp(code, finisher) { // '|&'
+  function readToken_pipe_amp(code) { // '|&'
     var next = input.charCodeAt(tokPos+1);
-    if (next === code) return finishOp(code === 124 ? _bin1 : _bin2, 2, finisher);
-    if (next === 61) return finishOp(_assign, 2, finisher);
-    return finishOp(code === 124 ? _bin3 : _bin5, 1, finisher);
+    if (next === code) return finishOp(code === 124 ? _bin1 : _bin2, 2);
+    if (next === 61) return finishOp(_assign, 2);
+    return finishOp(code === 124 ? _bin3 : _bin5, 1);
   }
 
-  function readToken_caret(finisher) { // '^'
+  function readToken_caret() { // '^'
     var next = input.charCodeAt(tokPos+1);
-    if (next === 61) return finishOp(_assign, 2, finisher);
-    return finishOp(_bin4, 1, finisher);
+    if (next === 61) return finishOp(_assign, 2);
+    return finishOp(_bin4, 1);
   }
 
-  function readToken_plus_min(code, finisher) { // '+-'
+  function readToken_plus_min(code) { // '+-'
     var next = input.charCodeAt(tokPos+1);
-    if (next === code) return finishOp(_incdec, 2, finisher);
-    if (next === 61) return finishOp(_assign, 2, finisher);
-    return finishOp(_plusmin, 1, finisher);
+    if (next === code) return finishOp(_incdec, 2);
+    if (next === 61) return finishOp(_assign, 2);
+    return finishOp(_plusmin, 1);
   }
 
-  function readToken_lt_gt(code, finisher) { // '<>'
+  function readToken_lt_gt(code) { // '<>'
     if (tokType === _import && options.objj && code === 60) {  // '<'
       for (var start = tokPos + 1;;) {
         var ch = input.charCodeAt(++tokPos);
         if (ch === 62)  // '>'
-          return finisher(_filename, input.slice(start, tokPos++));
+          return finishToken(_filename, input.slice(start, tokPos++));
         if (tokPos >= inputLen || ch === 13 || ch === 10 || ch === 8232 || ch === 8233)
           raise(tokStart, "Unterminated import statement");
       }
@@ -887,63 +871,175 @@
     var size = 1;
     if (next === code) {
       size = code === 62 && input.charCodeAt(tokPos+2) === 62 ? 3 : 2;
-      if (input.charCodeAt(tokPos + size) === 61) return finishOp(_assign, size + 1, finisher);
-      return finishOp(_bin8, size, finisher);
+      if (input.charCodeAt(tokPos + size) === 61) return finishOp(_assign, size + 1);
+      return finishOp(_bin8, size);
     }
     if (next === 61)
       size = input.charCodeAt(tokPos+2) === 61 ? 3 : 2;
-    return finishOp(_bin7, size, finisher);
+    return finishOp(_bin7, size);
   }
 
-  function readToken_eq_excl(code, finisher) { // '=!'
+  function readToken_eq_excl(code) { // '=!'
     var next = input.charCodeAt(tokPos+1);
-    if (next === 61) return finishOp(_bin6, input.charCodeAt(tokPos+2) === 61 ? 3 : 2, finisher);
-    return finishOp(code === 61 ? _eq : _prefix, 1, finisher);
+    if (next === 61) return finishOp(_bin6, input.charCodeAt(tokPos+2) === 61 ? 3 : 2);
+    return finishOp(code === 61 ? _eq : _prefix, 1);
   }
 
-  function readToken_at(code, finisher) { // '@'
+  function readToken_at(code) { // '@'
     var next = input.charCodeAt(++tokPos);
     if (next === 34 || next === 39)  // Read string if "'" or '"'
-      return readString(next, finisher);
+      return readString(next);
     if (next === 123) // Read dictionary literal if "{"
-      return finisher(_dictionaryLiteral);
+      return finishToken(_dictionaryLiteral);
     if (next === 91) // Read array literal if "["
-      return finisher(_arrayLiteral);
+      return finishToken(_arrayLiteral);
 
     var word = readWord1(),
         token = objJAtKeywordTypes[word];
     if (!token) raise(tokStart, "Unrecognized Objective-J keyword '@" + word + "'");
-    return finisher(token);
+    return finishToken(token);
   }
 
-  // True if we are skipping token when finding #else or #endif after and #if
+  function cloneToken(token) {
+    var t = {
+      start: token.start,
+      end: token.end,
+      startLoc: token.startLoc,
+      endLoc: token.endLoc,
+      type: token.type,
+      value: token.value
+    };
+    if (options.trackComments) {
+      t.commentsBefore = token.commentsBefore;
+      t.commentsAfter = token.commentsAfter;
+      t.lastCommentsAfter = token.lastCommentsAfter;
+    }
+    if (options.trackSpaces) {
+      t.spacesBefore = token.spacesBefore;
+      t.spacesAfter = token.spacesAfter;
+      t.lastSpacesAfter = token.lastSpacesAfter;
+    }
+    return t;
+  }
 
-  var preNotSkipping = true;
-  var preIfLevel = 0;
+  // When a macro is expanded, this stack stores state information.
 
-  function readToken_preprocess(finisher) { // '#'
-    ++tokPos;
-    preprocessReadToken(false, true); // Dont track and it is a preprocessToken
-    switch (preTokType) {
+  var macroStack;
+
+  // When expanding a macro and reading from source, we need to save and restore the token
+  // after the end of the macro invocation (including arguments).
+
+  var macroTokenStack;
+
+  function preprocess(inpt, opts) {
+    macros = Object.create(null);
+    macroStack = [];
+    macroTokenStack = [];
+    tokenStream = [];
+    // The index is not used unless we are reading from a tokenStream
+    tokenStreamIndex = null;
+    preprocessing = isPreprocessorStatement = false;
+    var getToken = exports.tokenize(inpt, opts);
+    do {
+      var token = getToken();
+      tokenStream.push(token);
+    }
+    while (token.type !== _eof)
+    // In the second pass we read from the token stream
+    tokenStreamIndex = 0;
+    readToken = streamReadToken;
+    skipSpace = emptyFunction;
+    setStrict = streamSetStrict;
+  }
+
+  function setToken(t) {
+    tokStart = t.start;
+    tokEnd = t.end;
+    tokStartLoc = t.startLoc;
+    tokEndLoc = t.endLoc;
+    tokType = t.type;
+    tokVal = t.value;
+    if (options.trackComments) {
+      tokCommentsBefore = t.commentsBefore
+      tokCommentsAfter = t.commentsAfter;
+      lastTokCommentsAfter = t.lastCommentsAfter;
+    }
+    if (options.trackSpaces) {
+      tokSpacesBefore = t.spacesBefore;
+      tokSpacesAfter = t.spacesAfter;
+      lastTokSpacesAfter = t.lastSpacesAfter;
+    }
+  }
+
+  function streamReadToken() {
+    if (tokenStreamIndex < tokenStream.length)
+      setToken(tokenStream[tokenStreamIndex++]);
+    else
+      finishToken(_eof);
+  }
+
+  function streamSetStrict(strct) {
+    strict = strct;
+  }
+
+  function read_preDefine() {
+    next();
+    var macroIdentifierEnd = tokEnd;
+    var macroIdentifier = parseIdent();
+    var parameters = [];
+    var parameterMap = {};
+    var isFunction = false;
+    // '(' Must follow directly after identifier to be a valid macro with parameters
+    if (input.charCodeAt(macroIdentifierEnd) === 40) { // '('
+      expect(_parenL);
+      isFunction = true;
+      var first = true;
+      while (!eat(_parenR)) {
+        if (!first)
+          expect(_comma, "Expected ',' between macro parameters"); else first = false;
+        var parameter = {
+          identifier: parseIdent().name,
+          index: parameters.length,
+          expand: false,
+          stringify: false
+        };
+        parameters.push(parameter);
+        parameterMap[parameter.identifier] = parameter;
+      }
+    }
+    // Read tokens until eof or eol that is not preceded by '\'
+    var tokens = [];
+    for (;;) {
+      if (tokType === _preBackslash) {
+        next();
+        expect(_eol, "Expected EOL after '\\'");
+      }
+      else if (tokType === _eol || tokType === _eof)
+        break;
+      var token = makeToken();
+      // If the token is a parameter name, mark it for expansion/stringification
+      if ((token.type === _name || token.type === _stringifiedName) &&
+          (parameter = parameterMap[token.value]) !== undefined)
+      {
+        // Mark the parameter itself for expansion/stringification
+        if (token.type === _name)
+          parameter.expand = true;
+        else
+          parameter.stringify = true;
+      }
+      tokens.push(token);
+      next();
+    }
+    options.addMacro(new Macro(macroIdentifier.name, parameters, parameterMap, isFunction, tokens));
+    eat(_eol);
+  }
+
+  function readToken_preprocess() { // '#'
+    preprocessing = isPreprocessorStatement = true;
+    next();
+    switch (tokType) {
       case _preDefine:
-        preprocessReadToken();
-        var macroIdentifierEnd = preTokEnd;
-        var macroIdentifier = preprocessGetIdent();
-        // '(' Must follow directly after identifier to be a valid macro with parameters
-        if (input.charCodeAt(macroIdentifierEnd) === 40) { // '('
-          preprocessExpect(_parenL);
-          var parameters = [];
-          var first = true;
-          while (!preprocessEat(_parenR)) {
-            if (!first) preprocessExpect(_comma, "Expected ',' between macro parameters"); else first = false;
-            parameters.push(preprocessGetIdent());
-          }
-        }
-        var start = tokPos = preTokStart;
-        preprocesSkipRestOfLine();
-        var macroString = input.slice(start, tokPos);
-        macroString = macroString.replace(/\\/g, " ");
-        options.addMacro(new Macro(macroIdentifier, macroString, parameters));
+        read_preDefine();
         break;
 
       case _preUndef:
@@ -963,7 +1059,7 @@
             preprocessSkipToElseOrEndif();
           }
         } else {
-          return finisher(_preIf);
+          return finishToken(_preIf);
         }
         break;
 
@@ -979,7 +1075,7 @@
           }
         } else {
           //preprocesSkipRestOfLine();
-          return finisher(_preIfdef);
+          return finishToken(_preIfdef);
         }
         break;
 
@@ -995,7 +1091,7 @@
           }
         } else {
           //preprocesSkipRestOfLine();
-          return finisher(_preIfndef);
+          return finishToken(_preIfndef);
         }
         break;
 
@@ -1003,11 +1099,11 @@
         if (preIfLevel) {
           if (preNotSkipping) {
             preNotSkipping = false;
-            finisher(_preElse);
+            finishToken(_preElse);
             preprocessReadToken();
             preprocessSkipToElseOrEndif(true); // no else
           } else {
-            return finisher(_preElse);
+            return finishToken(_preElse);
           }
         } else
           raise(preTokStart, "#else without #if");
@@ -1022,7 +1118,7 @@
         } else {
           raise(preTokStart, "#endif without #if");
         }
-        return finisher(_preEndif);
+        return finishToken(_preEndif);
         break;
 
       case _prePragma:
@@ -1037,12 +1133,9 @@
         raise(preTokStart, "Invalid preprocessing directive");
         preprocesSkipRestOfLine();
         // Return the complete line as a token to make it possible to create a PreProcessStatement if we are between two statements
-        return finisher(_preprocess);
+        return finishToken(_preprocess);
         //raise(tokPos, "Invalid preprocessing directive '" + (preTokType.keyword || preTokVal) + "' " + input.slice(tokStart, tokPos));
     }
-    // Drop this token and read next non preprocess token
-    finishToken(_preprocess);
-    return readToken();
   }
 
   function preprocessEvalExpression(expr) {
@@ -1092,37 +1185,37 @@
     }, {});
   }
 
-  function getTokenFromCode(code, finisher) {
-    switch(code) {
+  function getTokenFromCode(code) {
+    switch (code) {
       // The interpretation of a dot depends on whether it is followed
       // by a digit.
     case 46: // '.'
-      return readToken_dot(code, finisher);
+      return readToken_dot(code);
 
       // Punctuation tokens.
-    case 40: ++tokPos; return finisher(_parenL);
-    case 41: ++tokPos; return finisher(_parenR);
-    case 59: ++tokPos; return finisher(_semi);
-    case 44: ++tokPos; return finisher(_comma);
-    case 91: ++tokPos; return finisher(_bracketL);
-    case 93: ++tokPos; return finisher(_bracketR);
-    case 123: ++tokPos; return finisher(_braceL);
-    case 125: ++tokPos; return finisher(_braceR);
-    case 58: ++tokPos; return finisher(_colon);
-    case 63: ++tokPos; return finisher(_question);
+    case 40: ++tokPos; return finishToken(_parenL);
+    case 41: ++tokPos; return finishToken(_parenR);
+    case 59: ++tokPos; return finishToken(_semi);
+    case 44: ++tokPos; return finishToken(_comma);
+    case 91: ++tokPos; return finishToken(_bracketL);
+    case 93: ++tokPos; return finishToken(_bracketR);
+    case 123: ++tokPos; return finishToken(_braceL);
+    case 125: ++tokPos; return finishToken(_braceR);
+    case 58: ++tokPos; return finishToken(_colon);
+    case 63: ++tokPos; return finishToken(_question);
 
       // '0x' is a hexadecimal number.
     case 48: // '0'
       var next = input.charCodeAt(tokPos+1);
-      if (next === 120 || next === 88) return readHexNumber(finisher);
+      if (next === 120 || next === 88) return readHexNumber();
       // Anything else beginning with a digit is an integer, octal
       // number, or float.
     case 49: case 50: case 51: case 52: case 53: case 54: case 55: case 56: case 57: // 1-9
-      return readNumber(false, finisher);
+      return readNumber(false);
 
       // Quotes produce strings.
     case 34: case 39: // '"', "'"
-      return readString(code, finisher);
+      return readString(code);
 
     // Operators are parsed inline in tiny state machines. '=' (61) is
     // often referred to. `finishOp` simply skips the amount of
@@ -1130,305 +1223,67 @@
     // of the type given by its first argument.
 
     case 47: // '/'
-      return readToken_slash(finisher);
+      return readToken_slash();
 
     case 37: case 42: // '%*'
-      return readToken_mult_modulo(finisher);
+      return readToken_mult_modulo();
 
     case 124: case 38: // '|&'
-      return readToken_pipe_amp(code, finisher);
+      return readToken_pipe_amp(code);
 
     case 94: // '^'
-      return readToken_caret(finisher);
+      return readToken_caret();
 
     case 43: case 45: // '+-'
-      return readToken_plus_min(code, finisher);
+      return readToken_plus_min(code);
 
     case 60: case 62: // '<>'
-      return readToken_lt_gt(code, finisher);
+      return readToken_lt_gt(code);
 
     case 61: case 33: // '=!'
-      return readToken_eq_excl(code, finisher);
+      return readToken_eq_excl(code);
 
     case 126: // '~'
-      return finishOp(_prefix, 1, finisher);
+      return finishOp(_prefix, 1);
 
     case 64: // '@'
       if (options.objj)
-        return readToken_at(code, finisher);
+        return readToken_at(code);
       return false;
 
     case 35: // '#'
+      ++tokPos;
       if (options.preprocess) {
-        return readToken_preprocess(finisher);
+        // Preprocessor directives are only valid at the beginning of the line
+        if (tokenStream.length > 0 && lastTokType !== _eol)
+          raise(--tokPos, "Preprocessor directives may only be used at the beginning of a line");
+        finishToken(_preprocess);
+        return readToken_preprocess();
       }
       return false;
 
     case 92: // '\'
-      if (options.preprocess) {
-        return finishOp(_preBackslash, 1, finisher);
-      }
-      return false;
+      if (isPreprocessorStatement)
+        return finishOp(_preBackslash, 1);
+      else
+        return false;
+    }
+
+    if (options.preprocess && (code === 10 || code === 13 || code === 8232 || code === 8233)) {
+      // eol terminates a preprocessor statement
+      if (isPreprocessorStatement)
+        preprocessing = isPreprocessorStatement = false;
+      return finishOp(_eol, code === 13 && input.charCodeAt(tokPos + 1) === 10 ? 2 : 1);
     }
 
     return false;
   }
 
-  // Returns true if it stops at a line break
-
-  function preprocessSkipSpace(skipComments) {
-    while (tokPos < inputLen) {
-      var ch = input.charCodeAt(tokPos);
-      if (ch === 32 || (ch > 8 && ch < 14) || ch === 160 || (ch >= 5760 && nonASCIIwhitespaceNoNewLine.test(String.fromCharCode(ch)))) {
-        ++tokPos;
-      } else if (ch === 92) { // '\'
-        // Check if we have an escaped newline. We are using a relaxed treatment of escaped newlines like gcc.
-        // We allow spaces, horizontal and vertical tabs, and form feeds between the backslash and the subsequent newline
-        var pos = tokPos + 1;
-        ch = input.charCodeAt(pos);
-        while (pos < inputLen && (ch === 32 || ch === 9 || ch === 11 || ch === 12 || (ch >= 5760 && nonASCIIwhitespaceNoNewLine.test(String.fromCharCode(ch)))))
-          ch = input.charCodeAt(++pos);
-        lineBreak.lastIndex = 0;
-        var match = lineBreak.exec(input.slice(pos, pos + 2));
-        if (match && match.index === 0) {
-          tokPos = pos + match[0].length;
-        } else {
-          return false;
-        }
-      } else if (skipComments && ch === 47) { // '/'
-        var next = input.charCodeAt(tokPos+1);
-        if (next === 42) { // '*'
-          skipBlockComment(null, true); // 'true' for don't track comments
-        } else if (next === 47) { // '/'
-          skipLineComment(null, true); // 'true' for don't track comments
-        } else break;
-      } else {
-        lineBreak.lastIndex = 0;
-        var match = lineBreak.exec(input.slice(tokPos, tokPos + 2));
-        return match && match.index === 0;
-      }
-    }
-  }
-
-  function preprocessSkipToElseOrEndif(skipElse) {
-    var ifLevel = 0;
-    while (ifLevel > 0 || (preTokType != _preEndif && (preTokType != _preElse || skipElse))) {
-      switch (preTokType) {
-        case _preIf:
-        case _preIfdef:
-        case _preIfndef:
-          ifLevel++;
-          break;
-
-        case _preEndif:
-          ifLevel--;
-          break;
-
-        case _eof:
-          preNotSkipping = true;
-          raise(preTokStart, "Missing #endif");
-      }
-      preprocessReadToken(true);
-    }
-    preNotSkipping = true;
-    if (preTokType === _preEndif)
-      preIfLevel--;
-  }
-
-// preprocessToken is used to cancel preNotSkipping when calling from readToken_preprocess.
-// FIXME: Refactor to not use this parameter preprocessToken. It is kind of confusing and it should be possible to do in another way
-  function preprocessReadToken(skipComments, preprocessToken) {
-    preTokStart = tokPos;
-    preTokInput = input;
-    if (tokPos >= inputLen) return _eof;
-    var code = input.charCodeAt(tokPos);
-    if (!preprocessToken && !preNotSkipping && code !== 35) { // '#'
-      // If we are skipping take the whole line if the token does not start with '#' (preprocess tokens)
-      preprocesSkipRestOfLine();
-      return preprocessFinishToken(_preprocessSkipLine, input.slice(preTokStart, tokPos));
-    } else if (preprocessMacroParameterListMode && code !== 41 && code !== 44) { // ')', ','
-      var parenLevel = 0;
-      // If we are parsing a macro parameter list parentheses within each argument must balance
-      while(tokPos < inputLen && (parenLevel || (code !== 41 && code !== 44))) { // ')', ','
-        if (code === 40) // '('
-          parenLevel++;
-        if (code === 41) // ')'
-          parenLevel--;
-        code = input.charCodeAt(++tokPos);
-      }
-      return preprocessFinishToken(_preprocessParamItem, input.slice(preTokStart, tokPos));
-    }
-    if (isIdentifierStart(code) || (code === 92 /* '\' */ && input.charCodeAt(tokPos +1) === 117 /* 'u' */)) return preprocessReadWord();
-    if (getTokenFromCode(code, skipComments ? preprocessFinishTokenSkipComments : preprocessFinishToken) === false) {
-      // If we are here, we either found a non-ASCII identifier
-      // character, or something that's entirely disallowed.
-      var ch = String.fromCharCode(code);
-      if (ch === "\\" || nonASCIIidentifierStart.test(ch)) return preprocessReadWord();
-      raise(tokPos, "Unexpected character '" + ch + "'");
-    }
-  }
-
-  function preprocessReadWord() {
-    var word = readWord1();
-    preprocessFinishToken(isKeywordPreprocessor(word) ? keywordTypesPreprocessor[word] : _name, word);
-  }
-
-  function preprocessFinishToken(type, val) {
-    preTokType = type;
-    preTokVal = val;
-    preTokEnd = tokPos;
-    preprocessSkipSpace();
-  }
-
-  function preprocessFinishTokenSkipComments(type, val) {
-    preTokType = type;
-    preTokVal = val;
-    preTokEnd = tokPos;
-    preprocessSkipSpace(true); // 'true' for skip comments
-  }
-
-  // Continue to the next token.
-
-  function preprocessNext() {
-    preLastStart = tokStart;
-    preLastEnd = tokEnd;
-    //lastEndLoc = tokEndLoc;
-    return preprocessReadToken();
-  }
-
-  // Predicate that tests whether the next token is of the given
-  // type, and if yes, consumes it as a side effect.
-
-  function preprocessEat(type) {
-    if (preTokType === type) {
-      preprocessNext();
-      return true;
-    }
-  }
-
-  // Expect a token of a given type. If found, consume it, otherwise,
-  // raise with errorMessage or an unexpected token error.
-
-  function preprocessExpect(type, errorMessage) {
-    if (preTokType === type) preprocessReadToken();
-    else raise(preTokStart, errorMessage || "Unexpected token");
-  }
-
-  function preprocessGetIdent() {
-    var ident = preTokType === _name ? preTokVal : ((!options.forbidReserved || preTokType.okAsIdent) && preTokType.keyword) || raise(preTokStart, "Expected Macro identifier");
-    preprocessNext();
-    return ident;
-  }
-
-  function preprocessParseIdent() {
-    var node = startNode();
-    node.name = preprocessGetIdent();
-    return preprocessFinishNode(node, "Identifier");
-  }
-
-  // Parse an  expression — either a single token that is an
-  // expression, an expression started by a keyword like `defined`,
-  // or an expression wrapped in punctuation like `()`.
-
-  function preprocessParseExpression() {
-    return preprocessParseExprOps();
-  }
-
-  // Start the precedence parser.
-
-  function preprocessParseExprOps() {
-    return preprocessParseExprOp(preprocessParseMaybeUnary(), -1);
-  }
-
-  // Parse binary operators with the operator precedence parsing
-  // algorithm. `left` is the left-hand side of the operator.
-  // `minPrec` provides context that allows the function to stop and
-  // defer further parser to one of its callers when it encounters an
-  // operator that has a lower precedence than the set it is parsing.
-
-  function preprocessParseExprOp(left, minPrec) {
-    var prec = preTokType.binop;
-    if (prec) {
-      if (!preTokType.preprocess) raise(preTokStart, "Unsupported macro operator");
-      if (prec > minPrec) {
-        var node = startNodeFrom(left);
-        node.left = left;
-        node.operator = preTokVal;
-        preprocessNext();
-        node.right = preprocessParseExprOp(preprocessParseMaybeUnary(), prec);
-        var node = preprocessFinishNode(node, /*/&&|\|\|/.test(node.operator) ? "LogicalExpression" : */"BinaryExpression");
-        return preprocessParseExprOp(node, minPrec);
-      }
-    }
-    return left;
-  }
-
-  // Parse an unary expression if possible
-
-  function preprocessParseMaybeUnary() {
-    if (preTokType.preprocess && preTokType.prefix) {
-      var node = startNode();
-      node.operator = tokVal;
-      node.prefix = true;
-      preprocessNext();
-      node.argument = preprocessParseMaybeUnary();
-      return preprocessFinishNode(node, "UnaryExpression");
-    }
-    return preprocessParseExprAtom();
-  }
-
-  // Parse an atomic macro expression — either a single token that is an
-  // expression, an expression started by a keyword like `defined`,
-  // or an expression wrapped in punctuation like `()`.
-
-  function preprocessParseExprAtom() {
-    switch (preTokType) {
-    case _name:
-      return preprocessParseIdent();
-
-    case _num: case _string:
-      return preprocessParseStringNumLiteral();
-
-    case _parenL:
-      var tokStart1 = preTokStart;
-      preprocessNext();
-      var val = preprocessParseExpression();
-      val.start = tokStart1;
-      val.end = preTokEnd;
-      preprocessExpect(_parenR, "Expected closing ')' in macro expression");
-      return val;
-
-    case _preDefined:
-      var node = startNode();
-      preprocessNext();
-      node.id = preprocessParseIdent();
-      return preprocessFinishNode(node, "DefinedExpression");
-
-    default:
-      unexpected();
-    }
-  }
-
-  function preprocessParseStringNumLiteral() {
-    var node = startNode();
-    node.value = preTokVal;
-    node.raw = preTokInput.slice(preTokStart, preTokEnd);
-    preprocessNext();
-    return preprocessFinishNode(node, "Literal");
-  }
-
-  function preprocessFinishNode(node, type) {
-    node.type = type;
-    node.end = preLastEnd;
-    return node;
-  }
-
-  function readToken(forceRegexp) {
+  function sourceReadToken(forceRegexp) {
     tokCommentsBefore = tokComments;
     tokSpacesBefore = tokSpaces;
     if (!forceRegexp) tokStart = tokPos;
     else tokPos = tokStart + 1;
-    tokInput = input;
     if (options.locations) tokStartLoc = new line_loc_t;
     if (forceRegexp) return readRegexp();
     if (tokPos >= inputLen) return finishToken(_eof);
@@ -1436,9 +1291,9 @@
     var code = input.charCodeAt(tokPos);
     // Identifier or keyword. '\uXXXX' sequences are allowed in
     // identifiers, so '\' also dispatches to that.
-    if (isIdentifierStart(code) || code === 92 /* '\' */) return readWord();
+    if (isIdentifierStart(code) || (code === 92 /* '\' */ && input.charCodeAt(tokPos + 1) === 117 /* 'u' */)) return readWord();
 
-    var tok = getTokenFromCode(code, finishToken);
+    var tok = getTokenFromCode(code);
 
     if (tok === false) {
       // If we are here, we either found a non-ASCII identifier
@@ -1450,10 +1305,10 @@
     return tok;
   }
 
-  function finishOp(type, size, finisher) {
+  function finishOp(type, size) {
     var str = input.slice(tokPos, tokPos + size);
     tokPos += size;
-    finisher(type, str);
+    finishToken(type, str);
   }
 
   // Parse a regular expression. Some context-awareness is necessary,
@@ -1503,17 +1358,17 @@
     return total;
   }
 
-  function readHexNumber(finisher) {
+  function readHexNumber() {
     tokPos += 2; // 0x
     var val = readInt(16);
     if (val == null) raise(tokStart + 2, "Expected hexadecimal number");
     if (isIdentifierStart(input.charCodeAt(tokPos))) raise(tokPos, "Identifier directly after number");
-    return finisher(_num, val);
+    return finishToken(_num, val);
   }
 
   // Read an integer, octal integer, or floating-point number.
 
-  function readNumber(startsWithDot, finisher) {
+  function readNumber(startsWithDot) {
     var start = tokPos, isFloat = false, octal = input.charCodeAt(tokPos) === 48;
     if (!startsWithDot && readInt(10) === null) raise(start, "Invalid number");
     if (input.charCodeAt(tokPos) === 46) {
@@ -1535,14 +1390,14 @@
     else if (!octal || str.length === 1) val = parseInt(str, 10);
     else if (/[89]/.test(str) || strict) raise(start, "Invalid number");
     else val = parseInt(str, 8);
-    return finisher(_num, val);
+    return finishToken(_num, val);
   }
 
   // Read a string value, interpreting backslash-escapes.
 
   var rs_str = [];
 
-  function readString(quote, finisher) {
+  function readString(quote) {
     tokPos++;
     var out = "";
     for (;;) {
@@ -1550,7 +1405,7 @@
       var ch = input.charCodeAt(tokPos);
       if (ch === quote) {
         ++tokPos;
-        return finisher(_string, out);
+        return finishToken(_string, out);
       }
       if (ch === 92) { // '\'
         ch = input.charCodeAt(++tokPos);
@@ -1645,62 +1500,20 @@
   function readWord(preReadWord) {
     var word = preReadWord || readWord1();
     var type = _name;
-    if (options.preprocess) {
-      var macro;
-      if (preprocessStackLastItem) {
-        // If the current macro has parameters check if this word is one of them and should be translated
-        if (preprocessStackLastItem.parameterDict && preprocessStackLastItem.macro.isParameterFunction()(word)) {
-          macro = preprocessStackLastItem.parameterDict[word];
-        }
-      }
-      // Does the word match against any of the known macro names
-      if (!macro && options.isMacro(word))
-        macro = options.getMacro(word);
-      if (macro) {
-        var macroStart = tokStart;
-        var parameters;
-        var hasParameters = macro.parameters;
-        var nextIsParenL;
-        if (hasParameters)
-          nextIsParenL = tokPos < inputLen && input.charCodeAt(tokPos) === 40; // '('
-        if (!hasParameters || nextIsParenL) {
-          // Now we know that we have a matching macro. Get parameters if needed
-          var macroString = macro.macro;
-          var lastTokPos = tokPos;
-          if (nextIsParenL) {
-            var first = true;
-            var noParams = 0;
-            parameters = Object.create(null);
-            preprocessReadToken();
-            preprocessMacroParameterListMode = true;
-            preprocessExpect(_parenL);
-            lastTokPos = tokPos;
-            while (!preprocessEat(_parenR)) {
-              if (!first) preprocessExpect(_comma, "Expected ',' between macro parameters"); else first = false;
-              var ident = hasParameters[noParams++];
-              var val = preTokVal;
-              preprocessExpect(_preprocessParamItem);
-              parameters[ident] = new Macro(ident, val);
-              lastTokPos = tokPos;
-            }
-            preprocessMacroParameterListMode = false;
-          }
-          // If the macro defines anything add it to the preprocess input stack
-          if (macroString) {
-            preprocessStackLastItem = {macro: macro, parameterDict: parameters, start: macroStart, end:lastTokPos, inputLen: inputLen, tokStart: tokStart, lastStart: lastStart, lastEnd: lastEnd};
-            preprocessStackLastItem.input = input;
-            preprocessStack.push(preprocessStackLastItem);
-            input = macroString;
-            inputLen = macroString.length;
-            tokPos = 0;
-          }
-          // Now read the next token
-          return next();
-        }
-      }
-    }
-
     if (!containsEsc) {
+      if (options.preprocess) {
+        if (isPreprocessorStatement) {
+          if (tokType === _preprocess && isKeywordPreprocessor(word))
+            return finishToken(keywordTypesPreprocessor[word], word);
+          else
+            // Any other word in a preprocessor statement is just a name
+            return finishToken(_name, word);
+        }
+        var macro;
+        if (!preprocessing && (macro = options.getMacro(word)) !== undefined) {
+          return expandMacro(macro, tokenStream);
+        }
+      }
       if (isKeyword(word)) type = keywordTypes[word];
       else if (options.objj && isKeywordObjJ(word)) type = keywordTypesObjJ[word];
       else if (options.forbidReserved &&
@@ -1711,14 +1524,283 @@
     return finishToken(type, word);
   }
 
-  var Macro = exports.Macro = function Macro(ident, macro, parameters) {
+  // A macro object. Note that a macro can have no parameters but still
+  // be a function macro if it is defined with an empty parameter list.
+
+  var Macro = exports.Macro = function Macro(ident, parameters, parameterMap, isFunction, tokens) {
     this.identifier = ident;
-    if (macro) this.macro = macro;
-    if (parameters) this.parameters = parameters;
+    this.parameters = parameters;
+    this.parameterMap = parameterMap;
+    this.isFunction = isFunction;
+    this.tokens = tokens;
   }
 
-  Macro.prototype.isParameterFunction = function() {
-    return this.isParameterFunctionVar || (this.isParameterFunctionVar = makePredicate((this.parameters || []).join(" ")));
+  Macro.prototype.isParameter = function(identifier) {
+    return this.parameterMap[identifier] !== undefined;
+  }
+
+  function pushMacro(macro, context) {
+    finishToken(_name, macro.identifier);
+    if (context !== undefined) {
+      macroStack.push({
+        macro: macro,
+        isBody: context.isBody,
+        readToken: readToken,
+        skipSpace: skipSpace,
+        setStrict: setStrict,
+        tokenStream: tokenStream,
+        tokenStreamIndex: tokenStreamIndex
+      });
+      tokenStream = context.tokens;
+      tokenStreamIndex = context.tokenIndex;
+      // If we are nested, we are reading from a token stream, not input
+      if (macroStack.length === 1) {
+        readToken = streamReadToken;
+        skipSpace = emptyFunction;
+        setStrict = streamSetStrict;
+      }
+    }
+  }
+
+  function popMacro(context) {
+    if (context !== undefined) {
+      // Communicate to the macro caller where we stopped parsing its token stream.
+      context.tokenIndex = tokenStreamIndex - 1;
+      var info = macroStack.pop();
+      readToken = info.readToken;
+      skipSpace = info.skipSpace;
+      setStrict = info.setStrict;
+      tokenStream = info.tokenStream;
+      tokenStreamIndex = info.tokenStreamIndex;
+    } else {
+      if (macroTokenStack.length > 0)
+        setToken(macroTokenStack.pop());
+      else
+        finishToken(_eof);
+    }
+  }
+
+  // Check to see if a macro reference in a macro body is recursive.
+  // Note that macro calls during argument expansion are not included in the check.
+
+  function isMacroSelfReference(macro) {
+    var count = macroStack.length;
+    while (count--) {
+      if (macroStack[count].isBody && macroStack[count].macro === macro)
+        return true;
+    }
+    return false;
+  }
+
+  function expandMacro(macro, expandedTokens, context) {
+    pushMacro(macro, context);
+    // Save the macro name as a token in case it is a function macro which has no arguments
+    var nameToken = makeToken();
+    preprocessing = true;
+    next();
+    var isMacro = true;
+    var args = null;
+    if (macro.isFunction) {
+      // A function macro that has no arguments is treated as a name
+      if (eat(_parenL)) {
+        args = parseMacroArguments(macro, context);
+      } else {
+        isMacro = false;
+        tokenStream.push(nameToken);
+      }
+    }
+    if (args === null) {
+      if (context === undefined) {
+        // Save where we are if we are reading from source
+        macroTokenStack.push(makeToken());
+      }
+      else if (tokType !== _eof) {
+        // If the macro has no args and is nested and we have not reached the end of
+        // the token stream, the next() above pushed us past the token *after* the macro call,
+        // which the caller will want to read again. So we back up one token in the stream.
+        --tokenStreamIndex;
+      }
+    }
+    if (isMacro)
+      expandMacroArguments(macro, args, expandedTokens);
+    popMacro(context);
+    preprocessing = macroStack.length > 0;
+    return isMacro;
+  }
+
+  function parseMacroArguments(macro, context) {
+    var arg = {tokenStream: null, tokens: [], stringifiedTokens: ""};
+    var argStart = tokStart;  // For error reporting, so we can point to the offending argument
+    var args = [];
+    // Start with a parenLevel of 1, which represents the open parens of the macro call.
+    // We stop scanning arguments when the level reaches zero.
+    var parenLevel = 1;
+    // This label allows us to break out of the loop within the inner switch statement
+    scanArguments:
+    for (;;) {
+      switch (tokType) {
+        case _parenL:
+          ++parenLevel;
+          break;
+
+        case _parenR:
+          if (--parenLevel === 0) {
+            // If there have already been args, and we reach the end with an empty arg,
+            // the last arg was empty, so push an empty string.
+            if (arg.tokens.length === 0 && args.length > 0) {
+              tokStart = tokPos;  // To make the raw value empty
+              finishToken(_string, "");
+              arg.tokens.push(makeToken());
+              args.push(arg);
+            }
+            else
+              args.push(arg);
+            // Don't go to the next token if we are nested, because we are already pointing
+            // just past the first token after the macro args.
+            if (context === undefined) {
+              skipSpace();
+              next();
+            }
+            break scanArguments;
+          }
+          break;
+
+        case _comma:
+          // Commas are valid within an argument, if they are within parens.
+          // If parenLevel === 1, the comma is an argument separator.
+          if (parenLevel === 1) {
+            // If the arg has no tokens, it was an empty argument, so add an empty string
+            if (arg.tokens.length === 0) {
+              tokStart = tokPos;  // To make the raw value empty
+              finishToken(_string, "");
+              arg.tokens.push(makeToken());
+            }
+            args.push(arg);
+            // If we have exceeded the formal parameters, no point in going further
+            if (args.length > macro.parameters.length)
+              break scanArguments;
+            arg = {tokenStream: null, tokens: [], stringifiedTokens: ""};
+            skipSpace();
+            next();
+            argStart = tokStart;
+            continue;
+          }
+          break;
+
+        case _eof:
+          raise(tokPos, "Unexpected EOF in macro call");
+      }
+      arg.tokens.push(makeToken());
+      skipSpace();
+      next();
+    }
+    // The number of arguments must match the formal parameter declarations
+    if (args.length !== macro.parameters.length)
+      raise(argStart, "Macro defines " + macro.parameters.length + " parameter" + (macro.parameters.length === 1 ? "" : "s") + ", called with " + args.length + " argument" + (args.length === 1 ? "" : "s"));
+    // The arguments have been consumed, if reading from source save where we are
+    if (context === undefined)
+      macroTokenStack.push(makeToken());
+    // Now prescan and expand/stringify arguments
+    for (var i = 0; i < args.length; ++i) {
+      if (macro.parameters[i].stringify) {
+        arg.stringifiedTokens = stringifyTokens(arg.tokens);
+      }
+      if (macro.parameters[i].expand) {
+        arg = args[i];
+        arg.expandedTokens = [];
+        for (var ti = 0; ti < arg.tokens.length; ++ti) {
+          var token = arg.tokens[ti];
+          if (token.type === _name) {
+            var nestedMacro = options.getMacro(token.value);
+            if (nestedMacro !== undefined) {
+              var context = {
+                tokens: arg.tokens,
+                tokenIndex: ti + 1,
+                isBody: false
+              };
+              if (expandMacro(nestedMacro, arg.expandedTokens, context))
+                ti = context.tokenIndex;
+              continue;
+            }
+          }
+          arg.expandedTokens.push(token);
+        }
+      }
+    }
+    return args;
+  }
+
+  function stringifyTokens(tokens) {
+    var str = '"';
+    for (var i = 0; i < tokens.length; ++i) {
+      if (tokens[i].type === _string) {
+        // Escape surrounding quotes and backslashes within the string
+        str += '\\"';
+        str += tokens[i].value.replace("\\", "\\\\");
+        str += '\\"';
+      } else {
+        str += input.slice(tokens[i].start, tokens[i].end);
+      }
+      if (i < tokens.length - 1)
+        str += " ";
+    }
+    str += '"';
+    // Construct a new string token that spans the entire range of the source
+    var token = {
+      start: tokens[0].start,
+      end: tokens[tokens.length - 1].end,
+      type: _string,
+      value: str
+    };
+    return token;
+  }
+
+  function expandMacroArguments(macro, args, expandedTokens) {
+    // If the macro has parameters, first expand arguments in the macro body,
+    // otherwise macro calls using the arguments won't be correct.
+    var argTokens = [];
+    if (macro.parameters.length !== 0) {
+      for (var i = 0; i < macro.tokens.length; ++i) {
+        var token = macro.tokens[i];
+        var parameter;
+        if ((token.type === _name || token.type === _stringifiedName) &&
+            (parameter = macro.parameterMap[token.value]) !== undefined)
+        {
+          if (token.type === _name)
+            Array.prototype.push.apply(argTokens, args[parameter.index].expandedTokens);
+          else
+            argTokens.push(args[parameter.index].stringifiedTokens);
+        }
+        else
+          argTokens.push(token);
+      }
+    } else {
+      // If the macro has no parameters, we can just iterate through its tokens.
+      argTokens = macro.tokens;
+    }
+    // Now expand macro calls in the expanded tokens
+    for (var i = 0; i < argTokens.length; ++i) {
+      var token = argTokens[i];
+      var nestedMacro;
+      if (token.type === _name &&
+          (nestedMacro = options.getMacro(token.value)) !== undefined &&
+          !isMacroSelfReference(macro))
+      {
+        // index: i + 1 because the index points to the macro name, we want to start parsing after that
+        var context = {
+          tokens: argTokens,
+          tokenIndex: i + 1,
+          isBody: true
+        };
+        // If it's a function macro and is not given parameters, treat it as a word
+        if (expandMacro(nestedMacro, expandedTokens, context)) {
+          i = context.tokenIndex;
+          continue;
+        }
+      }
+      else
+        expandedTokens.push(token);
+    }
   }
 
   // ## Parser
@@ -1756,7 +1838,7 @@
   // Enter strict mode. Re-reads the next token to please pedantic
   // tests ("use strict"; 010; -- should fail).
 
-  function setStrict(strct) {
+  function sourceSetStrict(strct) {
     strict = strct;
     tokPos = lastEnd;
     while (tokPos < tokLineStart) {
@@ -1890,7 +1972,7 @@
 
   function canInsertSemicolon() {
     return !options.strictSemicolons &&
-      (tokType === _eof || tokType === _braceR || newline.test(tokInput.slice(lastEnd, tokStart)) ||
+      (tokType === _eof || tokType === _braceR || newline.test(input.slice(lastEnd, tokStart)) ||
         (nodeMessageSendObjectExpression && options.objj));
   }
 
@@ -1934,7 +2016,7 @@
 
   function parseTopLevel(program) {
     lastStart = lastEnd = tokPos;
-    if (options.locations) lastEndLoc = new line_loc_t;
+    if (options.locations) lastEndLoc = new line_loc_t();
     inFunction = strict = null;
     labels = [];
     readToken();
@@ -2098,7 +2180,7 @@
 
     case _throw:
       next();
-      if (newline.test(tokInput.slice(lastEnd, tokStart)))
+      if (newline.test(input.slice(lastEnd, tokStart)))
         raise(lastEnd, "Illegal newline after throw");
       node.argument = parseExpression();
       semicolon();
@@ -2283,14 +2365,6 @@
 
         node.filename = parseStringNumRegExpLiteral();
         return finishNode(node, "ImportStatement");
-      }
-      break;
-
-    // Objective-J
-    case _preprocess:
-      if (options.objj) {
-        next();
-        return finishNode(node, "PreprocessStatement");
       }
       break;
 
@@ -3037,7 +3111,7 @@
   function parseStringNumRegExpLiteral() {
     var node = startNode();
     node.value = tokVal;
-    node.raw = tokInput.slice(tokStart, tokEnd);
+    node.raw = input.slice(tokStart, tokEnd);
     next();
     return finishNode(node, "Literal");
   }
