@@ -341,15 +341,14 @@
 
   var tokenStreamIndex;
 
-  // When parsing a preprocessor statement, special rules apply.
+  // We need to keep track of what state the preprocessor is in.
 
-  var isPreprocessorStatement;
-
-  // When we are within a preprocessor statement, expanding a macro, or skipping to
-  // the #else or #endif of a conditional preprocessor block, tokens are read but
-  // no comments or spaces are tracked.
-
-  var preprocessing;
+  var preprocessorState;
+  var preprocessorState_none = 0;  // Not handling preprocessor directives
+  var preprocessorState_directive = 1;  // Parsing a preprocessor directive
+  var preprocessorState_macroBody = 2;  // Parsing a macro body
+  var preprocessorState_macroExpansion = 3;  // Expanding a macro call
+  var preprocessorState_skipping = 4;  // Skipping to #else/#endif
 
   // This function is used to raise exceptions on parse errors. It
   // takes either a `{line, column}` object or an offset integer (into
@@ -713,7 +712,8 @@
         tokLineStart = match.index + match[0].length;
       }
     }
-    if (preprocessing) return;
+    if (preprocessorState > preprocessorState_none)
+      return;
     if (options.onComment)
       options.onComment(true, input.slice(start + 2, end), start, tokPos,
                         startLoc, options.locations && new line_loc_t);
@@ -729,7 +729,8 @@
       ++tokPos;
       ch = input.charCodeAt(tokPos);
     }
-    if (preprocessing) return;
+    if (preprocessorState > preprocessorState_none)
+      return;
     if (options.onComment)
       options.onComment(false, input.slice(start + 2, tokPos), start, tokPos,
                         startLoc, options.locations && new line_loc_t);
@@ -753,7 +754,7 @@
       if (ch === 32) { // ' '
         ++tokPos;
       } else if (ch === 13) {
-        if (isPreprocessorStatement)
+        if (preprocessorState > preprocessorState_none)
           break;
         lastIsNewlinePos = tokPos;
         ++tokPos;
@@ -768,7 +769,7 @@
         // Inform the preprocessor that we saw eol
         lastTokType = _eol;
       } else if (ch === 10) {
-        if (isPreprocessorStatement)
+        if (preprocessorState > preprocessorState_none)
           break;
         lastIsNewlinePos = tokPos;
         ++tokPos;
@@ -781,7 +782,7 @@
       } else if (ch === 47) { // '/'
         var next = input.charCodeAt(tokPos+1);
         if (next === 42) { // '*'
-          if (options.trackSpaces && !preprocessing)
+          if (options.trackSpaces && preprocessorState === preprocessorState_none)
             (tokSpaces || (tokSpaces = [])).push(input.slice(spaceStart, tokPos));
           skipBlockComment(lastIsNewlinePos);
           spaceStart = tokPos;
@@ -938,7 +939,7 @@
     tokenStream = [];
     // The index is not used unless we are reading from a tokenStream
     tokenStreamIndex = null;
-    preprocessing = isPreprocessorStatement = false;
+    preprocessorState = preprocessorState_none;
     var getToken = exports.tokenize(inpt, opts);
     do {
       var token = getToken();
@@ -994,7 +995,7 @@
       expect(_parenL);
       isFunction = true;
       var first = true;
-      while (!eat(_parenR)) {
+      while (tokType !== _parenR) {
         if (!first)
           expect(_comma, "Expected ',' between macro parameters"); else first = false;
         var parameter = {
@@ -1006,7 +1007,11 @@
         parameters.push(parameter);
         parameterMap[parameter.identifier] = parameter;
       }
+      preprocessorState = preprocessorState_macroBody;
+      next();
     }
+    else
+      preprocessorState = preprocessorState_macroBody;
     // Read tokens until eof or eol that is not preceded by '\'
     var tokens = [];
     for (;;) {
@@ -1035,8 +1040,8 @@
   }
 
   function readToken_preprocess() { // '#'
-    preprocessing = isPreprocessorStatement = true;
     next();
+    preprocessorState = preprocessorState_directive;
     switch (tokType) {
       case _preDefine:
         read_preDefine();
@@ -1059,7 +1064,7 @@
             preprocessSkipToElseOrEndif();
           }
         } else {
-          return finishToken(_preIf);
+          finishToken(_preIf);
         }
         break;
 
@@ -1075,7 +1080,7 @@
           }
         } else {
           //preprocesSkipRestOfLine();
-          return finishToken(_preIfdef);
+          finishToken(_preIfdef);
         }
         break;
 
@@ -1091,7 +1096,7 @@
           }
         } else {
           //preprocesSkipRestOfLine();
-          return finishToken(_preIfndef);
+          finishToken(_preIfndef);
         }
         break;
 
@@ -1103,7 +1108,7 @@
             preprocessReadToken();
             preprocessSkipToElseOrEndif(true); // no else
           } else {
-            return finishToken(_preElse);
+            finishToken(_preElse);
           }
         } else
           raise(preTokStart, "#else without #if");
@@ -1118,7 +1123,7 @@
         } else {
           raise(preTokStart, "#endif without #if");
         }
-        return finishToken(_preEndif);
+        finishToken(_preEndif);
         break;
 
       case _prePragma:
@@ -1133,9 +1138,11 @@
         raise(preTokStart, "Invalid preprocessing directive");
         preprocesSkipRestOfLine();
         // Return the complete line as a token to make it possible to create a PreProcessStatement if we are between two statements
-        return finishToken(_preprocess);
+        finishToken(_preprocess);
         //raise(tokPos, "Invalid preprocessing directive '" + (preTokType.keyword || preTokVal) + "' " + input.slice(tokStart, tokPos));
     }
+
+    preprocessorState = preprocessorState_none;
   }
 
   function preprocessEvalExpression(expr) {
@@ -1263,16 +1270,17 @@
       return false;
 
     case 92: // '\'
-      if (isPreprocessorStatement)
+      if (preprocessorState === preprocessorState_macroBody)
         return finishOp(_preBackslash, 1);
       else
         return false;
     }
 
-    if (options.preprocess && (code === 10 || code === 13 || code === 8232 || code === 8233)) {
-      // eol terminates a preprocessor statement
-      if (isPreprocessorStatement)
-        preprocessing = isPreprocessorStatement = false;
+    if (preprocessorState > preprocessorState_none && (code === 10 || code === 13 || code === 8232 || code === 8233)) {
+      // eol terminates a preprocessor statement, unless we are in a macro body
+      // and the previous token was a backslash.
+      if (preprocessorState !== preprocessorState_macroBody || tokType !== _preBackslash)
+        preprocessorState = preprocessorState_none;
       return finishOp(_eol, code === 13 && input.charCodeAt(tokPos + 1) === 10 ? 2 : 1);
     }
 
@@ -1502,16 +1510,14 @@
     var type = _name;
     if (!containsEsc) {
       if (options.preprocess) {
-        if (isPreprocessorStatement) {
+        if (preprocessorState === preprocessorState_none) {
           if (tokType === _preprocess && isKeywordPreprocessor(word))
             return finishToken(keywordTypesPreprocessor[word], word);
-          else
-            // Any other word in a preprocessor statement is just a name
-            return finishToken(_name, word);
-        }
-        var macro;
-        if (!preprocessing && (macro = options.getMacro(word)) !== undefined) {
-          return expandMacro(macro, tokenStream);
+          else {
+            var macro;
+            if ((macro = options.getMacro(word)) !== undefined)
+              return expandMacro(macro, tokenStream);
+          }
         }
       }
       if (isKeyword(word)) type = keywordTypes[word];
@@ -1573,8 +1579,11 @@
       tokenStream = info.tokenStream;
       tokenStreamIndex = info.tokenStreamIndex;
     } else {
-      if (macroTokenStack.length > 0)
+      if (macroTokenStack.length > 0) {
         setToken(macroTokenStack.pop());
+        // If we are parsing source, skip to the next token after the macro call
+        skipSpace();
+      }
       else
         finishToken(_eof);
     }
@@ -1596,7 +1605,8 @@
     pushMacro(macro, context);
     // Save the macro name as a token in case it is a function macro which has no arguments
     var nameToken = makeToken();
-    preprocessing = true;
+    var savedState = preprocessorState;
+    preprocessorState = preprocessorState_macroExpansion;
     next();
     var isMacro = true;
     var args = null;
@@ -1623,8 +1633,8 @@
     }
     if (isMacro)
       expandMacroArguments(macro, args, expandedTokens);
+    preprocessorState = savedState;
     popMacro(context);
-    preprocessing = macroStack.length > 0;
     return isMacro;
   }
 
