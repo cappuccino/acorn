@@ -1725,6 +1725,12 @@
           }
           break;
 
+        case _eol:
+          skipSpace();
+          next();
+          argStart = tokStart;
+          continue;
+
         case _eof:
           raise(tokPos, "Unexpected EOF in macro call");
       }
