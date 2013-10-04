@@ -209,6 +209,7 @@
 
   function makeToken() {
     var t = {
+      input: input,
       start: tokStart,
       end: tokEnd,
       startLoc: tokStartLoc,
@@ -281,11 +282,11 @@
 
   var tokType, tokVal;
 
-  // When preprocessing, sometimes we have to construct a string,
-  // and a string node needs a raw value which includes the quotes.
-  // So we sometimes set this variable when constructing a string.
+  // Token input can come from several sources: source code, macros passed
+  // on the command line, and synthesized tokens (token pasting, stringification).
+  // This variable holds the source to which tokStart and tokEnd point.
 
-  var tokRaw;
+  var tokInput;
 
   // When preprocessing, we need to know if the last token was eol.
 
@@ -678,6 +679,7 @@
   // Reset the token state. Used at the start of a parse.
 
   function initTokenState() {
+    tokInput = input;
     tokCurLine = 1;
     tokPos = tokLineStart = 0;
     tokRegexpAllowed = true;
@@ -965,13 +967,13 @@
   }
 
   function setToken(t) {
+    tokInput = t.input;
     tokStart = t.start;
     tokEnd = t.end;
     tokStartLoc = t.startLoc;
     tokEndLoc = t.endLoc;
     tokType = t.type;
     tokVal = t.value;
-    tokRaw = t.raw;
     if (options.trackComments) {
       tokCommentsBefore = t.commentsBefore
       tokCommentsAfter = t.commentsAfter;
@@ -1798,6 +1800,7 @@
     }
     // Construct a new string token that spans the entire range of the source
     var token = {
+      input: input,
       start: start,
       end: end,
       type: _string,
@@ -1862,8 +1865,6 @@
     }
   }
 
-  // Paste a series of tokens together.
-
   function pasteTokenSeries(macro, args, bodyTokens, i, lastPasteIndex) {
     // When we enter this function, it has already been established that there
     // is a valid paste in the next two tokens, so no need to check until the
@@ -1896,11 +1897,10 @@
         var arg = args[toks[i].macroParameter.index];
         if (arg.tokens.length !== 0) {
           // When pasting, arguments are *not* expanded, but they can be stringified
-          if (toks[i].type === _name) {
+          if (toks[i].type === _name)
             tokensToPaste[i] = arg.tokens.slice(0);
-          } else { // type === _stringifiedName
+          else // type === _stringifiedName
             tokensToPaste[i] = [stringifyMacroArgument(arg)];
-          }
         }
       }
       else
@@ -1921,7 +1921,7 @@
     }
     Array.prototype.push.apply(pastedTokens, tokensToPaste[0]);
     if (doPaste) {
-      var tokenText = spellToken(leftToken) + spellToken(rightToken);
+      var tokenText = leftToken.input.slice(leftToken.start, leftToken.end) + rightToken.input.slice(rightToken.start, rightToken.end);
       var pastedToken = lexToken(tokenText);
       if (pastedToken !== null)
         pastedTokens.push(pastedToken);
@@ -1986,6 +1986,7 @@
     var context = {
       input: input,
       inputLen: inputLen,
+      tokInput: tokInput,
       tokCurLine: tokCurLine,
       tokPos: tokPos,
       tokLineStart: tokLineStart,
@@ -2015,6 +2016,7 @@
     }
     input = context.input;
     inputLen = context.inputLen;
+    tokInput = context.tokInput;
     tokCurLine = context.tokCurLine;
     tokPos = context.tokPos;
     tokLineStart = context.tokLineStart;
@@ -2024,17 +2026,7 @@
     readToken = context.readToken;
     skipSpace = context.skipSpace;
     setStrict = context.setStrict;
-    // token is synthetic, so we have to set the raw value
-    // FIXME: Once I support tokInput, I will instead set token.input = text.
-    if (token !== null)
-      token.raw = text.slice(token.start, token.end);
     return token;
-  }
-
-  function spellToken(token) {
-    // FIXME: I need to add input attribute to token, then I can eliminate raw
-    // and start/end are relative to input.
-    return token.raw !== undefined ? token.raw : input.slice(token.start, token.end);
   }
 
   // ## Parser
@@ -3345,8 +3337,7 @@
   function parseStringNumRegExpLiteral() {
     var node = startNode();
     node.value = tokVal;
-    // FIXME: Switch to using tokInput, tokStart/tokEnd are relative to that
-    node.raw = tokRaw === undefined ? input.slice(tokStart, tokEnd) : tokRaw;
+    node.raw = tokInput.slice(tokStart, tokEnd);
     next();
     return finishNode(node, "Literal");
   }
