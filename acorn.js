@@ -1033,11 +1033,8 @@
         next();
         expect(_eol, "Expected EOL after '\\'");
       }
-      else if (tokType === _eol || tokType === _eof) {
-        // We have to set lastTokType so the next readToken() will know the previous token was eol/eof
-        lastTokType = tokType;
+      else if (tokType === _eol || tokType === _eof)
         break;
-      }
       tokens.push(makeToken());
       next();
     }
@@ -1314,7 +1311,10 @@
       // and the previous token was a backslash.
       if (preprocessorState !== preprocessorState_macroBody || tokType !== _preLineContinuation)
         preprocessorState = preprocessorState_none;
-      return finishOp(_eol, code === 13 && input.charCodeAt(tokPos + 1) === 10 ? 2 : 1);
+      finishOp(_eol, code === 13 && input.charCodeAt(tokPos + 1) === 10 ? 2 : 1);
+      // Inform the preprocessor that we saw eol
+      lastTokType = _eol;
+      return;
     }
 
     return false;
