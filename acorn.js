@@ -1695,7 +1695,10 @@
 
         case _parenR:
           if (--parenLevel === 0) {
-            args.push(arg);
+            // If there are no args so far and this one is empty, that means no args were passed.
+            // If there were args previously and this one is empty, it's an empty arg.
+            if (args.length !== 0 || arg.tokens.length !== 0)
+              args.push(arg);
             // Don't go to the next token if we are nested, because we are already pointing
             // just past the first token after the macro args.
             if (context === undefined) {
