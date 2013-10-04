@@ -618,7 +618,7 @@
 
   // The preprocessor keywords and tokens.
 
-  var isKeywordPreprocessor = makePredicate("define pragma if ifdef ifndef else elif endif defined");
+  var isKeywordPreprocessor = makePredicate("define undef pragma if ifdef ifndef else elif endif defined");
   var preprocessorTokens = [_preIf, _preIfdef, _preIfndef, _preElse, _preElseIf, _preEndif];
 
   // ## Character categories
@@ -1058,9 +1058,9 @@
         break;
 
       case _preUndef:
-        preprocessReadToken();
-        options.undefineMacro(preprocessGetIdent());
-        preprocesSkipRestOfLine();
+        next();
+        options.undefineMacro(parseIdent().name);
+        eat(_eol);
         break;
 
       case _preIf:
@@ -1821,14 +1821,15 @@
     // Second pass: expand macro calls.
     for (var i = 0; i < bodyTokens.length; ++i) {
       var token = bodyTokens[i];
-      if (lookupMacro(token)) {
+      var nestedMacro;
+      if ((nestedMacro = lookupMacro(token)) !== undefined) {
         // tokenIndex: i + 1 because the index points to the macro name, we want to start parsing after that
         var context = {
           tokens: bodyTokens,
           tokenIndex: i + 1,
           isBody: true
         };
-        if (expandMacro(token.macro, expandedTokens, context)) {
+        if (expandMacro(nestedMacro, expandedTokens, context)) {
           i = context.tokenIndex;
           continue;
         }
@@ -1971,15 +1972,13 @@
   }
 
   function lookupMacro(token) {
+    var macro;
     if (token.type === _name) {
-      if (token.macro === undefined) {
-        token.macro = options.getMacro(token.value);
-        if (token.macro === undefined)
-          return false;
-      }
-      return !isMacroSelfReference(token.macro);
+      macro = options.getMacro(token.value);
+      if (macro !== undefined && isMacroSelfReference(macro))
+        macro = undefined;
     }
-    return false;
+    return macro;
   }
 
   function lexToken(text) {
