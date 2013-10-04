@@ -938,6 +938,11 @@
 
   var macroTokenStack;
 
+  // The preprocessor uses this function pointer returned by exports.tokenize
+  // in several places to get the next token.
+
+  var preprocessorGetToken;
+
   function preprocess(inpt, opts) {
     macros = Object.create(null);
     macroStack = [];
@@ -946,9 +951,9 @@
     // The index is not used unless we are reading from a tokenStream
     tokenStreamIndex = null;
     preprocessorState = preprocessorState_none;
-    var getToken = exports.tokenize(inpt, opts);
+    preprocessorGetToken = exports.tokenize(inpt, opts);
     do {
-      var token = getToken();
+      var token = preprocessorGetToken();
       tokenStream.push(token);
     }
     while (token.type !== _eof)
@@ -999,6 +1004,7 @@
     var isFunction = false;
     // '(' Must follow directly after identifier to be a valid macro with parameters
     if (input.charCodeAt(macroIdentifierEnd) === 40) { // '('
+      // Read macro parameters
       expect(_parenL);
       isFunction = true;
       var first = true;
@@ -1018,10 +1024,10 @@
     }
     else
       preprocessorState = preprocessorState_macroBody;
-    // Read tokens until eof or eol that is not preceded by '\'
+    // Read macro body tokens until eof or eol that is not preceded by '\'
     var tokens = [];
     for (;;) {
-      if (tokType === _preLineContinuation) {
+      if (tokType === _preLineContinuation) { // '\'
         next();
         expect(_eol, "Expected EOL after '\\'");
       }
@@ -1030,19 +1036,15 @@
         lastTokType = tokType;
         break;
       }
-      var token = makeToken();
-      // If the token is a parameter name, mark it for expansion/stringification
-      if ((token.type === _name || token.type === _stringifiedName) &&
-          (parameter = parameterMap[token.value]) !== undefined)
-      {
-        // Mark the parameter itself for expansion/stringification
-        if (token.type === _name)
-          parameter.expand = true;
-        else
-          parameter.stringify = true;
-      }
-      tokens.push(token);
+      tokens.push(makeToken());
       next();
+    }
+    // ## cannot be at the beginning or end
+    if (tokens.length !== 0) {
+      if (tokens[0].type === _preTokenPaste)
+        raise(tokens[0].start, "## may not be at the beginning of a macro");
+      else if (tokens[tokens.length - 1].type === _preTokenPaste)
+        raise(tokens[tokens.length - 1].start, "## may not be at the end of a macro");
     }
     options.addMacro(new Macro(macroIdentifier.name, parameters, parameterMap, isFunction, tokens));
     eat(_eol);
@@ -1157,7 +1159,7 @@
     if (tokType === _name)
       return finishToken(_stringifiedName, tokVal);
     else
-      raise("# (stringify) must be followed by a name");
+      raise(tokStart, "# (stringify) must be followed by a name");
   }
 
   function preprocessEvalExpression(expr) {
@@ -1655,12 +1657,12 @@
         tokenStream.push(nameToken);
       }
     }
+    if (context === undefined) {
+      // Save where we are if we are reading from source
+      macroTokenStack.push(makeToken());
+    }
     if (args === null) {
-      if (context === undefined) {
-        // Save where we are if we are reading from source
-        macroTokenStack.push(makeToken());
-      }
-      else if (tokType !== _eof) {
+      if (tokType !== _eof) {
         // If the macro has no args and is nested and we have not reached the end of
         // the token stream, the next() above pushed us past the token *after* the macro call,
         // which the caller will want to read again. So we back up one token in the stream.
@@ -1668,14 +1670,14 @@
       }
     }
     if (isMacroCall)
-      expandMacroArguments(macro, args, expandedTokens);
+      expandMacroBody(macro, args, expandedTokens);
     preprocessorState = savedState;
     popMacro(context);
     return isMacroCall;
   }
 
   function parseMacroArguments(macro, context) {
-    var arg = {tokenStream: null, tokens: [], stringifiedTokens: ""};
+    var arg = {tokens: []};
     var argStart = tokStart;  // For error reporting, so we can point to the offending argument
     var args = [];
     // Start with a parenLevel of 1, which represents the open parens of the macro call.
@@ -1691,16 +1693,7 @@
 
         case _parenR:
           if (--parenLevel === 0) {
-            // If there have already been args, and we reach the end with an empty arg,
-            // the last arg was empty, so push an empty string.
-            if (arg.tokens.length === 0 && args.length > 0) {
-              tokStart = tokPos;  // To make the raw value empty
-              finishToken(_string, "");
-              arg.tokens.push(makeToken());
-              args.push(arg);
-            }
-            else
-              args.push(arg);
+            args.push(arg);
             // Don't go to the next token if we are nested, because we are already pointing
             // just past the first token after the macro args.
             if (context === undefined) {
@@ -1715,17 +1708,11 @@
           // Commas are valid within an argument, if they are within parens.
           // If parenLevel === 1, the comma is an argument separator.
           if (parenLevel === 1) {
-            // If the arg has no tokens, it was an empty argument, so add an empty string
-            if (arg.tokens.length === 0) {
-              tokStart = tokPos;  // To make the raw value empty
-              finishToken(_string, "");
-              arg.tokens.push(makeToken());
-            }
             args.push(arg);
             // If we have exceeded the formal parameters, no point in going further
             if (args.length > macro.parameters.length)
               break scanArguments;
-            arg = {tokenStream: null, tokens: [], stringifiedTokens: ""};
+            arg = {tokens: []};
             skipSpace();
             next();
             argStart = tokStart;
@@ -1743,36 +1730,6 @@
     // The number of arguments must match the formal parameter declarations
     if (args.length !== macro.parameters.length)
       raise(argStart, "Macro defines " + macro.parameters.length + " parameter" + (macro.parameters.length === 1 ? "" : "s") + ", called with " + args.length + " argument" + (args.length === 1 ? "" : "s"));
-    // The arguments have been consumed, if reading from source save where we are
-    if (context === undefined)
-      macroTokenStack.push(makeToken());
-    // Now prescan and expand/stringify arguments
-    for (var i = 0; i < args.length; ++i) {
-      if (macro.parameters[i].stringify) {
-        arg.stringifiedTokens = stringifyTokens(arg.tokens);
-      }
-      if (macro.parameters[i].expand) {
-        arg = args[i];
-        arg.expandedTokens = [];
-        for (var ti = 0; ti < arg.tokens.length; ++ti) {
-          var token = arg.tokens[ti];
-          if (token.type === _name) {
-            var nestedMacro = options.getMacro(token.value);
-            if (nestedMacro !== undefined) {
-              var context = {
-                tokens: arg.tokens,
-                tokenIndex: ti + 1,
-                isBody: false
-              };
-              if (expandMacro(nestedMacro, arg.expandedTokens, context))
-                ti = context.tokenIndex;
-              continue;
-            }
-          }
-          arg.expandedTokens.push(token);
-        }
-      }
-    }
     return args;
   }
 
@@ -1796,42 +1753,47 @@
   var stringRegex = /(['"])((?:[^\\\"]+|\\.)*)\1/g;
 
   function stringifyTokens(tokens) {
-    var start = tokens[0].start;
-    var end = tokens[tokens.length - 1].end;
-    // gcc spec says leading and trailing whitespace is trimmed
-    var str = input.slice(start, end).trim();
     var result = "";
-    var i = 0;
-    while (i < str.length) {
-      var c = str.charAt(i);
-      // gcc spec says any sequence of whitespace is converted to a single space
-      var match = whitespaceRegex.exec(c);
-      if (match) {
-        whitespaceRegex.lastIndex = i;
-        match = whitespaceRegex.exec(str);
-        result += " ";
-        i = whitespaceRegex.lastIndex;
-        whitespaceRegex.lastIndex = 0;
-      }
-      else if (c === '"' || c === "'") {
-        stringRegex.lastIndex = i;
-        var match = stringRegex.exec(str);
-        if (match === null) {
-          // If the regex fails, the string was unterminated, so take whatever is left and stop
-          result += str.slice(i);
-          break;
-        } else {
-          i = stringRegex.lastIndex;
-          // A literal string has to escape double quotes, non-printing characters and backslashes
-          var escaped = match[2].replace(/["\n\r\t\\\b\v\f\u00A0\u2028\u2029]/g, escapeNonPrintingChar);
-          // Finally enclose the result in backslashed quotes
-          var quote = c === '"' ? '\\"' : "'";
-          result += quote + escaped + quote;
+    var start, end;
+    if (tokens.length === 0) {
+      start = end = tokPos;
+    } else {
+      start = tokens[0].start;
+      end = tokens[tokens.length - 1].end;
+      // gcc spec says leading and trailing whitespace is trimmed
+      var str = input.slice(start, end).trim();
+      var i = 0;
+      while (i < str.length) {
+        var c = str.charAt(i);
+        // gcc spec says any sequence of whitespace is converted to a single space
+        var match = whitespaceRegex.exec(c);
+        if (match) {
+          whitespaceRegex.lastIndex = i;
+          match = whitespaceRegex.exec(str);
+          result += " ";
+          i = whitespaceRegex.lastIndex;
+          whitespaceRegex.lastIndex = 0;
         }
-      }
-      else {
-        result += c;
-        ++i;
+        else if (c === '"' || c === "'") {
+          stringRegex.lastIndex = i;
+          var match = stringRegex.exec(str);
+          if (match === null) {
+            // If the regex fails, the string was unterminated, so take whatever is left and stop
+            result += str.slice(i);
+            break;
+          } else {
+            i = stringRegex.lastIndex;
+            // A literal string has to escape double quotes, non-printing characters and backslashes
+            var escaped = match[2].replace(/["\n\r\t\\\b\v\f\u00A0\u2028\u2029]/g, escapeNonPrintingChar);
+            // Finally enclose the result in backslashed quotes
+            var quote = c === '"' ? '\\"' : "'";
+            result += quote + escaped + quote;
+          }
+        }
+        else {
+          result += c;
+          ++i;
+        }
       }
     }
     // Construct a new string token that spans the entire range of the source
@@ -1845,45 +1807,25 @@
     return token;
   }
 
-  function expandMacroArguments(macro, args, expandedTokens) {
-    // If the macro has parameters, first expand arguments in the macro body,
-    // otherwise macro calls using the arguments won't be correct.
-    var argTokens = [];
-    if (macro.parameters.length !== 0) {
-      for (var i = 0; i < macro.tokens.length; ++i) {
-        var token = macro.tokens[i];
-        var parameter;
-        if ((token.type === _name || token.type === _stringifiedName) &&
-            (parameter = macro.getParameterByName(token.value)) !== undefined)
-        {
-          if (token.type === _name)
-            Array.prototype.push.apply(argTokens, args[parameter.index].expandedTokens);
-          else
-            argTokens.push(args[parameter.index].stringifiedTokens);
-        }
-        else
-          argTokens.push(token);
-      }
-    } else {
+  function expandMacroBody(macro, args, expandedTokens) {
+    // Expansion requires two passes. The first pass does argument substitution.
+    var bodyTokens = [];
+    if (macro.parameters.length !== 0)
+      substituteMacroArguments(macro, args, bodyTokens);
+    else
       // If the macro has no parameters, we can just iterate through its tokens.
-      argTokens = macro.tokens;
-    }
-    // Now expand macro calls in the expanded tokens
-    for (var i = 0; i < argTokens.length; ++i) {
-      var token = argTokens[i];
-      var nestedMacro;
-      if (token.type === _name &&
-          (nestedMacro = options.getMacro(token.value)) !== undefined &&
-          !isMacroSelfReference(macro))
-      {
-        // index: i + 1 because the index points to the macro name, we want to start parsing after that
+      bodyTokens = macro.tokens;
+    // Second pass: expand macro calls.
+    for (var i = 0; i < bodyTokens.length; ++i) {
+      var token = bodyTokens[i];
+      if (lookupMacro(token)) {
+        // tokenIndex: i + 1 because the index points to the macro name, we want to start parsing after that
         var context = {
-          tokens: argTokens,
+          tokens: bodyTokens,
           tokenIndex: i + 1,
           isBody: true
         };
-        // If it's a function macro and is not given parameters, treat it as a word
-        if (expandMacro(nestedMacro, expandedTokens, context)) {
+        if (expandMacro(token.macro, expandedTokens, context)) {
           i = context.tokenIndex;
           continue;
         }
@@ -1891,6 +1833,208 @@
       else
         expandedTokens.push(token);
     }
+  }
+
+  function substituteMacroArguments(macro, args, bodyTokens) {
+    // The last possible token that can be pasted is the 3rd from last
+    for (var i = 0, lastPasteIndex = macro.tokens.length - 3; i < macro.tokens.length; ++i) {
+      var token = macro.tokens[i];
+      if (token.type === _name || token.type === _stringifiedName) {
+        // First handle pasting, because pasted args are not macro expanded.
+        // If there are at least two more tokens, and the next one is ##,
+        // do the paste thing.
+        if (i <= lastPasteIndex && macro.tokens[i + 1].type === _preTokenPaste) {
+          var index;
+          if ((index = pasteTokenSeries(macro, args, bodyTokens, i, lastPasteIndex)) !== 0) {
+            i = index;
+            continue;
+          }
+        }
+        if (lookupMacroParameter(macro, token)) {
+          if (token.type === _name)
+            Array.prototype.push.apply(bodyTokens, expandMacroArgument(args[token.macroParameter.index]));
+          else
+            bodyTokens.push(stringifyMacroArgument(args[token.macroParameter.index]));
+          continue;
+        }
+      }
+      bodyTokens.push(token);
+    }
+  }
+
+  // Paste a series of tokens together.
+
+  function pasteTokenSeries(macro, args, bodyTokens, i, lastPasteIndex) {
+    // When we enter this function, it has already been established that there
+    // is a valid paste in the next two tokens, so no need to check until the
+    // end of the loop.
+    var pastedTokens = [];
+    do {
+      // If there was a previous paste, the left token is the last token of the result,
+      // otherwise it's the current macro token. The right token will always be the macro token
+      // after ##.
+      var leftToken = pastedTokens.length === 0 ? macro.tokens[i] : pastedTokens[pastedTokens.length - 1];
+      pasteTokens(leftToken, macro, i, args, pastedTokens);
+      // Continue from the right token
+      i += 2;
+    }
+    while (i <= lastPasteIndex && macro.tokens[i + 1].type === _preTokenPaste);
+    if (pastedTokens.length !== 0) {
+      Array.prototype.push.apply(bodyTokens, pastedTokens);
+      return i;
+    }
+    else
+      return 0;
+  }
+
+  function pasteTokens(leftToken, macro, index, args, pastedTokens) {
+    var rightToken = macro.tokens[index + 2];
+    var toks = [leftToken, rightToken];
+    var tokensToPaste = [null, null];
+    for (var i = 0; i < toks.length; ++i) {
+      if (lookupMacroParameter(macro, toks[i])) {
+        var arg = args[toks[i].macroParameter.index];
+        if (arg.tokens.length !== 0) {
+          // When pasting, arguments are *not* expanded, but they can be stringified
+          if (toks[i].type === _name) {
+            tokensToPaste[i] = arg.tokens.slice(0);
+          } else { // type === _stringifiedName
+            tokensToPaste[i] = [stringifyMacroArgument(arg)];
+          }
+        }
+      }
+      else
+        tokensToPaste[i] = [toks[i]];
+    }
+    // Only paste if both tokens are non-empty.
+    var doPaste = tokensToPaste[0] !== null && tokensToPaste[1] !== null;
+    if (doPaste) {
+      // Take the last token from the left side and first from the right,
+      // they will be pasted together if possible. Everything else is
+      // appended as is.
+      leftToken = tokensToPaste[0].pop();
+      rightToken = tokensToPaste[1].shift();
+      // If we are going to paste, and there are tokens from a previous paste
+      // in the series, then we have to replace the last token with the pasted one.
+      if (pastedTokens.length !== 0)
+        pastedTokens.pop();
+    }
+    Array.prototype.push.apply(pastedTokens, tokensToPaste[0]);
+    if (doPaste) {
+      var tokenText = spellToken(leftToken) + spellToken(rightToken);
+      var pastedToken = lexToken(tokenText);
+      if (pastedToken !== null)
+        pastedTokens.push(pastedToken);
+      else
+        raise(macro.tokens[index + 1].start, "Pasting formed '" + tokenText + "', an invalid token");
+    }
+    Array.prototype.push.apply(pastedTokens, tokensToPaste[1]);
+  }
+
+  function expandMacroArgument(arg) {
+    if (arg.expandedTokens === undefined) {
+      arg.expandedTokens = [];
+      for (var i = 0; i < arg.tokens.length; ++i) {
+        var token = arg.tokens[i];
+        if (token.type === _name) {
+          var nestedMacro = options.getMacro(token.value);
+          if (nestedMacro !== undefined) {
+            var context = {
+              tokens: arg.tokens,
+              tokenIndex: i + 1,
+              isBody: false
+            };
+            if (expandMacro(nestedMacro, arg.expandedTokens, context))
+              i = context.tokenIndex;
+            continue;
+          }
+        }
+        arg.expandedTokens.push(token);
+      }
+    }
+    return arg.expandedTokens;
+  }
+
+  function stringifyMacroArgument(arg) {
+    if (arg.stringifiedTokens === undefined)
+      arg.stringifiedTokens = stringifyTokens(arg.tokens);
+    return arg.stringifiedTokens;
+  }
+
+  function lookupMacroParameter(macro, token) {
+    if (token.type === _name || token.type === _stringifiedName) {
+      if (token.macroParameter === undefined)
+        token.macroParameter = macro.getParameterByName(token.value);
+      return token.macroParameter !== undefined;
+    }
+    return false;
+  }
+
+  function lookupMacro(token) {
+    if (token.type === _name) {
+      if (token.macro === undefined) {
+        token.macro = options.getMacro(token.value);
+        if (token.macro === undefined)
+          return false;
+      }
+      return !isMacroSelfReference(token.macro);
+    }
+    return false;
+  }
+
+  function lexToken(text) {
+    var context = {
+      input: input,
+      inputLen: inputLen,
+      tokCurLine: tokCurLine,
+      tokPos: tokPos,
+      tokLineStart: tokLineStart,
+      tokRegexpAllowed: tokRegexpAllowed,
+      tokComments: tokComments,
+      tokSpaces: tokSpaces,
+      readToken: readToken,
+      skipSpace: skipSpace,
+      setStrict: setStrict
+    };
+    readToken = sourceReadToken;
+    skipSpace = sourceSkipSpace;
+    setStrict = sourceSetStrict;
+    input = text;
+    inputLen = text.length;
+    initTokenState();
+    var token = null;
+    try {
+      token = preprocessorGetToken();
+      // If tokEnd did not reach the end of the text,
+      // the entire text was not a single token and thus is invalid.
+      if (token !== null && token.end < text.length)
+        token = null;
+    }
+    catch (e) {
+      // Nothing to do, null token is what we want
+    }
+    input = context.input;
+    inputLen = context.inputLen;
+    tokCurLine = context.tokCurLine;
+    tokPos = context.tokPos;
+    tokLineStart = context.tokLineStart;
+    tokRegexpAllowed = context.tokRegexpAllowed;
+    tokComments = context.tokComments;
+    tokSpaces = context.tokSpaces;
+    readToken = context.readToken;
+    skipSpace = context.skipSpace;
+    setStrict = context.setStrict;
+    // token is synthetic, so we have to set the raw value
+    // FIXME: Once I support tokInput, I will instead set token.input = text.
+    if (token !== null)
+      token.raw = text.slice(token.start, token.end);
+    return token;
+  }
+
+  function spellToken(token) {
+    // FIXME: I need to add input attribute to token, then I can eliminate raw
+    // and start/end are relative to input.
+    return token.raw !== undefined ? token.raw : input.slice(token.start, token.end);
   }
 
   // ## Parser
@@ -3201,6 +3345,7 @@
   function parseStringNumRegExpLiteral() {
     var node = startNode();
     node.value = tokVal;
+    // FIXME: Switch to using tokInput, tokStart/tokEnd are relative to that
     node.raw = tokRaw === undefined ? input.slice(tokStart, tokEnd) : tokRaw;
     next();
     return finishNode(node, "Literal");
