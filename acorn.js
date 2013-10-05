@@ -251,11 +251,14 @@
       input: input,
       start: tokStart,
       end: tokEnd,
-      startLoc: tokStartLoc,
-      endLoc: tokEndLoc,
       type: tokType,
-      value: tokVal
+      value: tokVal,
+      regexpAllowed: tokRegexpAllowed
     };
+    if (options.locations) {
+      t.startLoc = tokStartLoc;
+      t.endLoc = tokEndLoc;
+    }
     if (options.trackComments) {
       t.commentsBefore = tokCommentsBefore;
       t.commentsAfter = tokCommentsAfter;
@@ -991,6 +994,7 @@
     tokEndLoc = t.endLoc;
     tokType = t.type;
     tokVal = t.value;
+    tokRegexpAllowed = t.regexpAllowed;
     if (options.trackComments) {
       tokCommentsBefore = t.commentsBefore
       tokCommentsAfter = t.commentsAfter;
