@@ -911,28 +911,6 @@
     return finishToken(token);
   }
 
-  function cloneToken(token) {
-    var t = {
-      start: token.start,
-      end: token.end,
-      startLoc: token.startLoc,
-      endLoc: token.endLoc,
-      type: token.type,
-      value: token.value
-    };
-    if (options.trackComments) {
-      t.commentsBefore = token.commentsBefore;
-      t.commentsAfter = token.commentsAfter;
-      t.lastCommentsAfter = token.lastCommentsAfter;
-    }
-    if (options.trackSpaces) {
-      t.spacesBefore = token.spacesBefore;
-      t.spacesAfter = token.spacesAfter;
-      t.lastSpacesAfter = token.lastSpacesAfter;
-    }
-    return t;
-  }
-
   // When a macro is expanded, this stack stores state information.
 
   var macroStack;
@@ -1078,7 +1056,9 @@
 
       case _preUndef:
         next();
-        options.undefineMacro(parseIdent().name);
+        var name = tokVal;
+        expect(_name, "Expected a name after #undef");
+        options.undefineMacro(name);
         eat(_eol);
         break;
 
