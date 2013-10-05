@@ -1002,26 +1002,43 @@
   function read_preDefine() {
     next();
     var macroIdentifierEnd = tokEnd;
-    var macroIdentifier = parseIdent();
+    var name = tokVal;
+    expect(_name, "Expected a name after #define");
     var parameters = [];
     var parameterMap = Object.create(null);  // Don't inherit from Object
     var isFunction = false;
+    var isVariadic = false;
     // '(' Must follow directly after identifier to be a valid macro with parameters
     if (input.charCodeAt(macroIdentifierEnd) === 40) { // '('
       // Read macro parameters
       expect(_parenL);
       isFunction = true;
-      var first = true;
+      var expectComma = false;
       while (tokType !== _parenR) {
-        if (!first)
-          expect(_comma, "Expected ',' between macro parameters"); else first = false;
-        var parameter = {
-          identifier: parseIdent().name,
-          expand: false,
-          stringify: false
-        };
-        parameters.push(parameter);
-        parameterMap[parameter.identifier] = parameter;
+        if (expectComma) {
+          expect(_comma, "Expected ',' between macro parameters");
+          expectComma = false;
+        }
+        else if (tokType === _name) {
+          var parameter = {
+            identifier: tokVal,
+            expand: false,
+            stringify: false
+          };
+          parameters.push(parameter);
+          parameterMap[parameter.identifier] = parameter;
+          next();
+          expectComma = true;
+        }
+        else if (tokType === _dotdotdot) {
+          isVariadic = true;
+          next();
+          expect(_parenR, "Expect ')' after ... in a macro parameter list");
+          break;
+        }
+        else {
+          raise(tokStart, "Unexpected token in macro parameters");
+        }
       }
       preprocessorState = preprocessorState_macroBody;
       next();
@@ -1047,7 +1064,7 @@
       else if (tokens[tokens.length - 1].type === _preTokenPaste)
         raise(tokens[tokens.length - 1].start, "## may not be at the end of a macro");
     }
-    options.addMacro(new Macro(macroIdentifier.name, parameters, parameterMap, isFunction, tokens));
+    options.addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, tokens));
     eat(_eol);
   }
 
@@ -1568,7 +1585,7 @@
   // A macro object. Note that a macro can have no parameters but still
   // be a function macro if it is defined with an empty parameter list.
 
-  var Macro = exports.Macro = function Macro(ident, parameters, parameterMap, isFunction, tokens) {
+  var Macro = exports.Macro = function Macro(ident, parameters, parameterMap, isFunction, isVariadic, tokens) {
     this.identifier = ident;
     // Tell the parameter its index, so when we lookup a parameter by name, we know its positional index
     for (var i = 0; i < parameters.length; ++i)
@@ -1576,6 +1593,7 @@
     this.parameters = parameters;
     this.parameterMap = parameterMap;
     this.isFunction = isFunction;
+    this.isVariadic = isVariadic;
     this.tokens = tokens;
   }
 
