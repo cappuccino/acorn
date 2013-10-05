@@ -1764,15 +1764,15 @@
   var stringRegex = /(['"])((?:[^\\\"]+|\\.)*)\1/g;
 
   function stringifyTokens(tokens) {
-    var result = "";
+    var result = '"';
     var start, end;
     if (tokens.length === 0) {
-      start = end = tokPos;
+      start = end = 0;
     } else {
       start = tokens[0].start;
       end = tokens[tokens.length - 1].end;
       // gcc spec says leading and trailing whitespace is trimmed
-      var str = input.slice(start, end).trim();
+      var str = tokens[0].input.slice(start, end).trim();
       var i = 0;
       while (i < str.length) {
         var c = str.charAt(i);
@@ -1807,14 +1807,14 @@
         }
       }
     }
-    // Construct a new string token that spans the entire range of the source
+    result += '"';
+    // Construct a new string token
     var token = {
-      input: input,
-      start: start,
-      end: end,
+      input: result,
+      start: 0,
+      end: result.length,
       type: _string,
-      value: result,
-      raw: '"' + result + '"'
+      value: result.slice(1, -1)
     };
     return token;
   }
