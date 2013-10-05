@@ -166,9 +166,46 @@
 
   var macros;
 
-  function defaultAddMacro(macro) {
-    if (macros[macro.identifier] !== undefined)
-      console.log("Warning: redefining the macro \"" + macro.identifier + "\"");
+    var old = macros[macro.identifier];
+    if (old !== undefined) {
+      // GCC preprocessor docs section 3.8 say that macros are effectively the same if:
+      // - Both are the same type (object/function)
+      // - All of the tokens are the same
+      // - Parameters (if any) are the same
+      var same = true;
+      if (old.isFunction === macro.isFunction &&
+          old.isVariadic === macro.isVariadic &&
+          old.parameters.length === macro.parameters.length &&
+          old.tokens.length === macro.tokens.length)
+      {
+        // Check parameters first if they are function macros
+        if (old.isFunction) {
+          for (var i = 0; i < old.parameters.length; ++i) {
+            if (old.parameters[i].type !== macro.parameters[i].type ||
+                old.parameters[i].value !== macro.parameters[i].value)
+            {
+              same = false;
+              break;
+            }
+          }
+        }
+        // Now check the body if necessary
+        if (same) {
+          for (var i = 0; i < old.tokens.length; ++i) {
+            if (old.tokens[i].type !== macro.tokens[i].type ||
+                old.tokens[i].value !== macro.tokens[i].value)
+            {
+              same = false;
+              break;
+            }
+          }
+        }
+      }
+      else
+        same = false;
+      if (!same)
+        console.log("Warning: redefining the macro \"" + macro.identifier + "\"");
+    }
     macros[macro.identifier] = macro;
   }
 
