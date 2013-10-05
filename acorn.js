@@ -167,6 +167,8 @@
   var macros;
 
   function defaultAddMacro(macro) {
+    if (macros[macro.identifier] !== undefined)
+      console.log("Warning: redefining the macro \"" + macro.identifier + "\"");
     macros[macro.identifier] = macro;
   }
 
