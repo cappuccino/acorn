@@ -204,7 +204,7 @@
       else
         same = false;
       if (!same)
-        console.log("Warning: redefining the macro \"" + macro.identifier + "\"");
+        console.warn("Warning: redefining the macro \"" + macro.identifier + "\"");
     }
     macros[macro.identifier] = macro;
   }
@@ -2043,7 +2043,7 @@
       if (pastedToken !== null)
         pastedTokens.push(pastedToken);
       else {
-        console.log("Pasting formed '" + tokenText + "', an invalid token " + makeLineColumnDisplay(macro.tokens[index + 1]));
+        console.warn("Warning: pasting formed '" + tokenText + "', an invalid token " + makeLineColumnDisplay(macro.tokens[index + 1]));
         pastedTokens.push(leftToken, rightToken);
       }
     }
