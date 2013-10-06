@@ -2025,8 +2025,12 @@
       var pastedToken = lexToken(tokenText);
       if (pastedToken !== null)
         pastedTokens.push(pastedToken);
-      else
-        raise(macro.tokens[index + 1].start, "Pasting formed '" + tokenText + "', an invalid token");
+      else {
+        var pasteToken = macro.tokens[index + 1];
+        var pos = getLineInfo(pasteToken.input, pasteToken.start);
+        console.log("Pasting formed '" + tokenText + "', an invalid token (" + pos.line + ":" + pos.column + ")");
+        pastedTokens.push(leftToken, rightToken);
+      }
     }
     Array.prototype.push.apply(pastedTokens, tokensToPaste[1]);
   }
