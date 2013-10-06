@@ -974,9 +974,14 @@
     tokenStreamIndex = null;
     preprocessorState = preprocessorState_none;
     preprocessorGetToken = exports.tokenize(inpt, opts);
+    addPredefinedMacros();
     do {
       var token = preprocessorGetToken();
       tokenStream.push(token);
+      if (tokType.prefix)
+        tokRegexpAllowed = true;
+      else if (tokType === _name)
+        tokRegexpAllowed = false;
     }
     while (token.type !== _eof)
     // In the second pass we read from the token stream
@@ -984,6 +989,21 @@
     readToken = streamReadToken;
     skipSpace = emptyFunction;
     setStrict = streamSetStrict;
+  }
+
+  function addPredefinedMacros() {
+    if (options.objj) {
+      var token = {
+        input: "1",
+        start: 0,
+        end: 2,
+        type: _num,
+        value: 1,
+        regexpAllowed: false
+      };
+      var macro = new Macro("__OBJJ__", [], Object.create(null), false, false, [token]);
+      addMacro(macro);
+    }
   }
 
   function setToken(t) {
