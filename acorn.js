@@ -1685,32 +1685,32 @@
 
   function pushMacro(macro, context) {
     finishToken(_name, macro.identifier);
+    var info = {macro: macro};
     if (context !== undefined) {
-      macroStack.push({
-        macro: macro,
-        isBody: context.isBody,
-        readToken: readToken,
-        skipSpace: skipSpace,
-        setStrict: setStrict,
-        tokenStream: tokenStream,
-        tokenStreamIndex: tokenStreamIndex
-      });
+      info.readToken = readToken;
+      info.skipSpace = skipSpace;
+      info.setStrict = setStrict;
+      info.tokenStream = tokenStream;
+      info.tokenStreamIndex = tokenStreamIndex;
+
       tokenStream = context.tokens;
       tokenStreamIndex = context.tokenIndex;
-      // If we are nested, we are reading from a token stream, not input
-      if (macroStack.length === 1) {
-        readToken = streamReadToken;
-        skipSpace = emptyFunction;
-        setStrict = streamSetStrict;
-      }
+    }
+
+    macroStack.push(info);
+    // If we are nested, we are reading from a token stream, not input
+    if (macroStack.length === 2) {
+      readToken = streamReadToken;
+      skipSpace = emptyFunction;
+      setStrict = streamSetStrict;
     }
   }
 
   function popMacro(context) {
+    var info = macroStack.pop();
     if (context !== undefined) {
       // Communicate to the macro caller where we stopped parsing its token stream.
       context.tokenIndex = tokenStreamIndex - 1;
-      var info = macroStack.pop();
       readToken = info.readToken;
       skipSpace = info.skipSpace;
       setStrict = info.setStrict;
@@ -1733,7 +1733,7 @@
   function isMacroSelfReference(macro) {
     var count = macroStack.length;
     while (count--) {
-      if (macroStack[count].isBody && macroStack[count].macro === macro)
+      if (macroStack[count].macro === macro)
         return true;
     }
     return false;
@@ -1935,8 +1935,7 @@
           // tokenIndex: i + 1 because the index points to the macro name, we want to start parsing after that
           var context = {
             tokens: bodyTokens,
-            tokenIndex: i + 1,
-            isBody: true
+            tokenIndex: i + 1
           };
           if (expandMacro(nestedMacro, expandedTokens, context))
             i = context.tokenIndex;
@@ -2057,12 +2056,12 @@
       for (var i = 0; i < arg.tokens.length; ++i) {
         var token = arg.tokens[i];
         if (token.type === _name) {
-          var nestedMacro = lookupMacro(token.value);
+          // true means this is a macro argument, which may be self-referential
+          var nestedMacro = lookupMacro(token.value, true);
           if (nestedMacro !== undefined) {
             var context = {
               tokens: arg.tokens,
-              tokenIndex: i + 1,
-              isBody: false
+              tokenIndex: i + 1
             };
             if (expandMacro(nestedMacro, arg.expandedTokens, context))
               i = context.tokenIndex;
@@ -2092,10 +2091,12 @@
 
   // Return the macro with the given name, but only if it is not self-referential.
 
-  function lookupMacro(name) {
+  function lookupMacro(name, isArg) {
     var macro;
     macro = options.getMacro(name);
-    if (macro !== undefined && isMacroSelfReference(macro))
+    // Comparing isArg !== true is faster than !isArg, because testing a non-boolean
+    // for falseness is very slow.
+    if (macro !== undefined && isArg !== true && isMacroSelfReference(macro))
       macro = undefined;
     return macro;
   }

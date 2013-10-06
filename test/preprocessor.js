@@ -21,14 +21,14 @@ foo = FOO;
 #define NUMBERS 1, \
                 2, \
                 3
-var x = [NUMBERS];
-// var x = [1, 2, 3];
+x = [NUMBERS];
+// x = [1, 2, 3];
 
 // Macros only take effect from point of definition
 foo = X;
+// foo = X;
 #define X 4
 bar = X;
-// foo = X;
 // bar = 4;
 
 // Macros are evaluated when expanded
@@ -78,16 +78,16 @@ lang_init();
 
 // Macros can take arguments
 #define min(X, Y)  ((X) < (Y) ? (X) : (Y))
-x = min(a, b);         // x = ((a) < (b) ? (a) : (b));
-y = min(1, 2);         // y = ((1) < (2) ? (1) : (2));
-z = min(a + 28, p);    // z = ((a + 28) < (*p) ? (a + 28) : (p));
+x = min(a, b);         // x = a < b ? a : b;
+y = min(1, 2);         // y = 1 < 2 ? 1 : 2;
+z = min(a + 28, p);    // z = a + 28 < p ? a + 28 : p;
 
 // Leading and trailing whitespace is trimmed, whitespace between tokens is reduced to single space
 x = min(  a   +   7,
          b
          -
          13  );
-// x = a + 7 < b - 13 ? a + 7 : b + 13;
+// x = a + 7 < b - 13 ? a + 7 : b - 13;
 
 // Square braces do not have to balance
 #define square_brackets(arg1, arg2)  arg1 ## arg2
@@ -119,9 +119,9 @@ x = paste_arg(QUAD, RUPLE(7));
 
 // Arguments may be empty
 #define ARGS(arg, arg2)  arg arg2
-ARGS(,);   // <empty>
+ARGS(,);    // <empty>
 ARGS(, 2);  // 2;
-ARGS(1,);  // 1;
+ARGS(1,);   // 1;
 
 // Macro parameters appearing inside string literals are not replaced by their corresponding actual arguments
 #define literal(arg)  arg; "arg"
@@ -137,9 +137,9 @@ literal(test);
 // and all backslashes within string and character constants
 #define stringify(arg)  #arg
 x = stringify(p = "foo\n");
-x = stringify(p = 'foo\n');
 // x = "p = \"foo\\n\"";
-// x = "p = 'foo\n'";
+x = stringify(p = 'foo\n');
+// x = "p = 'foo\\n'";
 
 // Backslashes that are not inside string or character constants are not duplicated
 x = stringify("foo	bar");
@@ -150,7 +150,7 @@ x = stringify("foo	bar");
 // in the stringified result.
 x = stringify(   foo  =
                 '  b a r  '   );
-// x = "foo = '  b a r '";
+// x = "foo = '  b a r  '";
 
 // If you want to stringify the result of expansion of a macro argument,
 // you have to use two levels of macros.
@@ -260,8 +260,46 @@ objj = __OBJJ__;
 // objj = __OBJJ__;
 
 /*
+    3.10.1 Misnesting
+*/
+
+#define twice(x) (2*(x))
+#define call_with_1(x) x(1)
+call_with_1 (twice);
+// 2 * 1;
+
+#define strange(file) fprintf (file, "%s %d",
+strange(stderr) p, 35);
+// fprintf(stderr, "%s %d", p, 35);
+
+/*
+    3.10.5 Self-Referential Macros
+*/
+
+#define self_reference (4 + self_reference)
+x = self_reference;
+// x = 4 + self_reference;
+
+#define EPERM EPERM
+x = EPERM;
+// x = EPERM;
+
+#define ref1 (4 + ref2)
+#define ref2 (2 * ref1)
+x = ref1;
+// x = 4 + 2 * ref1;
+y = ref2;
+// y = 2 * (4 + ref2);
+
+/*
     3.10.6 Argument Prescan
 */
+
+#define f(arg) arg * 2
+x = f (f (f(1)));
+// ==> x = f (f (1 * 2));
+// ==> x = f (1 * 2 * 2);
+// x = 1 * 2 * 2 * 2;
 
 #define AFTERX(x) X_ ## x
 #define XAFTERX(x) AFTERX(x)
@@ -272,3 +310,15 @@ var a = AFTERX(BUFSIZE),
     b = XAFTERX(BUFSIZE);
 // var a = X_BUFSIZE,
 //     b = X_1024;
+
+#define foo  (a,b)
+#define bar(x) lose(x)
+#define lose(x) (1 + (x))
+bar(foo);
+// 1 + (a, b);
+#undef foo
+#undef bar
+#define foo  a,b
+#define bar(x) lose((x))
+bar(foo);
+// 1 + (a, b);
