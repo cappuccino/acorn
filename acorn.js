@@ -166,6 +166,7 @@
 
   var macros;
 
+  function defaultAddMacro(macro) {
     var old = macros[macro.identifier];
     if (old !== undefined) {
       // GCC preprocessor docs section 3.8 say that macros are effectively the same if:
@@ -1017,7 +1018,7 @@
         regexpAllowed: false
       };
       var macro = new Macro("__OBJJ__", [], Object.create(null), false, false, [token]);
-      addMacro(macro);
+      options.addMacro(macro);
     }
   }
 
@@ -2093,7 +2094,7 @@
 
   function lookupMacro(name) {
     var macro;
-    macro = getMacro(name);
+    macro = options.getMacro(name);
     if (macro !== undefined && isMacroSelfReference(macro))
       macro = undefined;
     return macro;
