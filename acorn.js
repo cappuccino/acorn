@@ -239,6 +239,21 @@
     return {line: line, column: offset - cur, lineStart: cur, lineEnd: (match ? match.index + match[0].length : input.length)};
   };
 
+  // Builds a (line:column) string from input & offset or from a token object.
+
+  var makeLineColumnDisplay = exports.makeLineColumnDisplay = function(tokenOrInput, offset) {
+    var lineInput, inputOffset;
+    if (typeof(tokenOrInput) === "string") {
+      lineInput = tokenOrInput;
+      inputOffset = offset;
+    } else {
+      lineInput = tokenOrInput.input;
+      inputOffset = tokenOrInput.start;
+    }
+    var pos = getLineInfo(lineInput, inputOffset);
+    return "(" + pos.line + ":" + pos.column + ")";
+  }
+
   // Acorn is organized as a tokenizer and a recursive-descent parser.
   // The `tokenize` export provides an interface to the tokenizer.
   // Because the tokenizer is optimized for being efficiently used by
@@ -2026,9 +2041,7 @@
       if (pastedToken !== null)
         pastedTokens.push(pastedToken);
       else {
-        var pasteToken = macro.tokens[index + 1];
-        var pos = getLineInfo(pasteToken.input, pasteToken.start);
-        console.log("Pasting formed '" + tokenText + "', an invalid token (" + pos.line + ":" + pos.column + ")");
+        console.log("Pasting formed '" + tokenText + "', an invalid token " + makeLineColumnDisplay(macro.tokens[index + 1]));
         pastedTokens.push(leftToken, rightToken);
       }
     }
