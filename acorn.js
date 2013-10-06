@@ -1928,21 +1928,21 @@
     // Second pass: expand macro calls.
     for (var i = 0; i < bodyTokens.length; ++i) {
       var token = bodyTokens[i];
-      var nestedMacro;
-      if ((nestedMacro = lookupMacro(token)) !== undefined) {
-        // tokenIndex: i + 1 because the index points to the macro name, we want to start parsing after that
-        var context = {
-          tokens: bodyTokens,
-          tokenIndex: i + 1,
-          isBody: true
-        };
-        if (expandMacro(nestedMacro, expandedTokens, context)) {
-          i = context.tokenIndex;
+      if (token.type === _name) {
+        var nestedMacro;
+        if ((nestedMacro = lookupMacro(token.value)) !== undefined) {
+          // tokenIndex: i + 1 because the index points to the macro name, we want to start parsing after that
+          var context = {
+            tokens: bodyTokens,
+            tokenIndex: i + 1,
+            isBody: true
+          };
+          if (expandMacro(nestedMacro, expandedTokens, context))
+            i = context.tokenIndex;
           continue;
         }
       }
-      else
-        expandedTokens.push(token);
+      expandedTokens.push(token);
     }
   }
 
@@ -2056,7 +2056,7 @@
       for (var i = 0; i < arg.tokens.length; ++i) {
         var token = arg.tokens[i];
         if (token.type === _name) {
-          var nestedMacro = options.getMacro(token.value);
+          var nestedMacro = lookupMacro(token.value);
           if (nestedMacro !== undefined) {
             var context = {
               tokens: arg.tokens,
@@ -2089,13 +2089,13 @@
     return false;
   }
 
-  function lookupMacro(token) {
+  // Return the macro with the given name, but only if it is not self-referential.
+
+  function lookupMacro(name) {
     var macro;
-    if (token.type === _name) {
-      macro = options.getMacro(token.value);
-      if (macro !== undefined && isMacroSelfReference(macro))
-        macro = undefined;
-    }
+    macro = getMacro(name);
+    if (macro !== undefined && isMacroSelfReference(macro))
+      macro = undefined;
     return macro;
   }
 
