@@ -1025,11 +1025,13 @@
     tokInput = t.input;
     tokStart = t.start;
     tokEnd = t.end;
-    tokStartLoc = t.startLoc;
-    tokEndLoc = t.endLoc;
     tokType = t.type;
     tokVal = t.value;
     tokRegexpAllowed = t.regexpAllowed;
+    if (options.locations) {
+      tokStartLoc = t.startLoc;
+      tokEndLoc = t.endLoc;
+    }
     if (options.trackComments) {
       tokCommentsBefore = t.commentsBefore
       tokCommentsAfter = t.commentsAfter;
@@ -1751,7 +1753,7 @@
         args = parseMacroArguments(macro, context);
       } else {
         isMacroCall = false;
-        tokenStream.push(nameToken);
+        expandedTokens.push(nameToken);
       }
     }
     if (context === undefined) {
