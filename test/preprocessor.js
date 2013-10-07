@@ -13,6 +13,12 @@ foo = FOO;
 foo = FOO;
 // foo = 13;
 
+// Comments may be used anywhere within a macro
+#define COMMENTS(/* an arg */ arg) /* one */ arg /* two */ * 7 /*
+three */ + 1
+x = COMMENTS(13);
+// x = 13 * 7 + 1;
+
 /*
     3.1 Object-like Macros
 */
