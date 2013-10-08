@@ -979,374 +979,6 @@
     return finishToken(token);
   }
 
-  // When a macro is expanded, this stack stores state information.
-
-  var macroStack;
-
-  // When a macro is expanded, the generated tokens go into this array.
-
-  var macroTokens;
-
-  // The preprocessor uses this function pointer returned by exports.tokenize
-  // in several places to get the next token.
-
-  var preprocessorGetToken;
-
-  function initPreprocessor(inpt, opts) {
-    macros = Object.create(null);
-    macroStack = [];
-    macroTokens = [];
-    tokenStream = macroTokens;
-    tokenStreamIndex = 0;
-    preprocessorState = preprocessorState_none;
-    preprocessorGetToken = exports.tokenize(inpt, opts);
-    addPredefinedMacros();
-  }
-
-  function addPredefinedMacros() {
-    if (options.objj) {
-      var token = {
-        input: "1",
-        start: 0,
-        end: 2,
-        pos: 2,
-        type: _num,
-        value: 1,
-        regexpAllowed: false
-      };
-      var macro = new Macro("__OBJJ__", [], Object.create(null), false, false, [token]);
-      options.addMacro(macro);
-    }
-  }
-
-  function setToken(t) {
-    tokInput = t.input;
-    tokStart = t.start;
-    tokEnd = t.end;
-    tokPos = t.pos;
-    tokType = t.type;
-    tokVal = t.value;
-    tokRegexpAllowed = t.regexpAllowed;
-    if (options.locations) {
-      tokStartLoc = t.startLoc;
-      tokEndLoc = t.endLoc;
-    }
-    if (options.trackComments) {
-      tokComments = t.comments;
-      tokCommentsBefore = t.commentsBefore
-      tokCommentsAfter = t.commentsAfter;
-      lastTokCommentsAfter = t.lastCommentsAfter;
-    }
-    if (options.trackSpaces) {
-      tokSpaces = t.spaces;
-      tokSpacesBefore = t.spacesBefore;
-      tokSpacesAfter = t.spacesAfter;
-      lastTokSpacesAfter = t.lastSpacesAfter;
-    }
-  }
-
-  function streamReadToken() {
-    if (tokenStreamIndex < tokenStream.length) {
-      setToken(tokenStream[tokenStreamIndex++]);
-      // If we exhaust the tokens and we are reading from the macro tokens,
-      // it's time to go back to reading from source and advance.
-      if (tokenStreamIndex === tokenStream.length && tokenStream === macroTokens) {
-        readToken = sourceReadToken;
-        skipSpace = sourceSkipSpace;
-        setStrict = sourceSetStrict;
-        nextToken();
-      }
-    }
-    else
-      finishToken(_eof);
-  }
-
-  function streamSkipSpace() { }
-
-  function streamSetStrict(strct) {
-    strict = strct;
-  }
-
-  function read_preDefine() {
-    next();
-    var macroIdentifierEnd = tokEnd;
-    var name = tokVal;
-    expect(_name, "Expected a name after #define");
-    if (name === "__VA_ARGS__")
-      raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
-
-    var parameters = [];
-    var parameterMap = Object.create(null);  // Don't inherit from Object
-    var isFunction = false;
-    var isVariadic = false;
-    // '(' Must follow directly after identifier to be a valid macro with parameters
-    if (input.charCodeAt(macroIdentifierEnd) === 40) { // '('
-      // Read macro parameters
-      expect(_parenL);
-      isFunction = true;
-      var expectComma = false;
-      while (tokType !== _parenR) {
-        if (expectComma) {
-          expect(_comma, "Expected ',' between macro parameters");
-          expectComma = false;
-        }
-        else if (tokType === _name) {
-          if (tokVal === "__VA_ARGS__")
-            raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
-
-          var parameter = {
-            identifier: tokVal,
-            expand: false,
-            stringify: false
-          };
-          parameters.push(parameter);
-          parameterMap[parameter.identifier] = parameter;
-          next();
-          expectComma = true;
-        }
-        else if (tokType === _dotdotdot) {
-          isVariadic = true;
-          next();
-          if (tokType !== _parenR)
-            raise(tokStart, "Expect ')' after ... in a macro parameter list");
-          break;
-        }
-        else {
-          raise(tokStart, "Unexpected token in macro parameters");
-        }
-      }
-      preprocessorState = preprocessorState_macroBody;
-      next();
-    }
-    else
-      preprocessorState = preprocessorState_macroBody;
-    // Read macro body tokens until eof or eol that is not preceded by '\'
-    var tokens = [];
-    scanBody:
-    for (;;) {
-      switch (tokType) {
-        case _preLineContinuation: // '\'
-        next();
-        expect(_eol, "Expected EOL after '\\'");
-        continue;
-
-        case _name:
-        case _stringifiedName:
-          if (!isVariadic && tokVal === "__VA_ARGS__")
-            raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
-          break;
-
-        case _eol:
-        case _eof:
-          break scanBody;
-      }
-
-      tokens.push(makeToken());
-      next();
-    }
-    // ## cannot be at the beginning or end
-    if (tokens.length > 0) {
-      if (tokens[0].type === _preTokenPaste)
-        raise(tokens[0].start, "## may not be at the beginning of a macro");
-      else if (tokens[tokens.length - 1].type === _preTokenPaste)
-        raise(tokens[tokens.length - 1].start, "## may not be at the end of a macro");
-    }
-    options.addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, tokens));
-    eat(_eol);
-  }
-
-  function readToken_preprocess() { // '#'
-    // If comments/spaces are being tracked, save the state so the next non-preprocess token
-    // can capture comments/spaces that came before this token.
-    finishToken(_preprocess);
-    var stateBeforeDirective;
-    if (options.trackComments || options.trackSpaces)
-      stateBeforeDirective = makeToken();
-    next();
-    preprocessorState = preprocessorState_directive;
-    switch (tokType) {
-      case _preDefine:
-        read_preDefine();
-        break;
-
-      case _preUndef:
-        next();
-        var name = tokVal;
-        expect(_name, "Expected a name after #undef");
-        options.undefineMacro(name);
-        eat(_eol);
-        break;
-
-      case _preIf:
-        if (preNotSkipping) {
-          preIfLevel++;
-          preprocessReadToken();
-          var expr = preprocessParseExpression();
-          var test = preprocessEvalExpression(expr);
-          if (!test) {
-            preNotSkipping = false;
-            preprocessSkipToElseOrEndif();
-          }
-        } else {
-          finishToken(_preIf);
-        }
-        break;
-
-      case _preIfdef:
-        if (preNotSkipping) {
-          preIfLevel++;
-          preprocessReadToken();
-          var ident = preprocessGetIdent();
-          var test = options.getMacro(ident);
-          if (!test) {
-            preNotSkipping = false
-            preprocessSkipToElseOrEndif();
-          }
-        } else {
-          //preprocesSkipRestOfLine();
-          finishToken(_preIfdef);
-        }
-        break;
-
-      case _preIfndef:
-        if (preNotSkipping) {
-          preIfLevel++;
-          preprocessReadToken();
-          var ident = preprocessGetIdent();
-          var test = options.getMacro(ident);
-          if (test) {
-            preNotSkipping = false
-            preprocessSkipToElseOrEndif();
-          }
-        } else {
-          //preprocesSkipRestOfLine();
-          finishToken(_preIfndef);
-        }
-        break;
-
-      case _preElse:
-        if (preIfLevel) {
-          if (preNotSkipping) {
-            preNotSkipping = false;
-            finishToken(_preElse);
-            preprocessReadToken();
-            preprocessSkipToElseOrEndif(true); // no else
-          } else {
-            finishToken(_preElse);
-          }
-        } else
-          raise(preTokStart, "#else without #if");
-        break;
-
-      case _preEndif:
-        if (preIfLevel) {
-          if (preNotSkipping) {
-            preIfLevel--;
-            break;
-          }
-        } else {
-          raise(preTokStart, "#endif without #if");
-        }
-        finishToken(_preEndif);
-        break;
-
-      case _prePragma:
-        preprocesSkipRestOfLine();
-        break;
-
-      case _prefix:
-        preprocesSkipRestOfLine();
-        break;
-
-      default:
-        raise(tokStart, "Invalid preprocessing directive");
-    }
-
-    preprocessorState = preprocessorState_none;
-
-    if (options.trackComments) {
-      // If there are comments after the directive, coalesce them with the ones before
-      if (stateBeforeDirective.commentsBefore !== null) {
-        Array.prototype.unshift.apply(tokCommentsBefore || (tokCommentsBefore = []), stateBeforeDirective.commentsBefore);
-        Array.prototype.unshift.apply(lastTokCommentsAfter || (lastTokCommentsAfter = []), stateBeforeDirective.lastCommentsAfter);
-      } else {
-        tokCommentsBefore = stateBeforeDirective.commentsBefore;
-        lastTokCommentsAfter = stateBeforeDirective.lastCommentsAfter;
-      }
-      tokComments = stateBeforeDirective.comments;
-      tokCommentsAfter = stateBeforeDirective.commentsAfter;
-    }
-    if (options.trackSpaces) {
-      // If there are spaces after the directive, coalesce them with the ones before
-      if (stateBeforeDirective.spacesBefore !== null) {
-        Array.prototype.unshift.apply(tokSpacesBefore || (tokSpacesBefore = []), stateBeforeDirective.spacesBefore);
-        Array.prototype.unshift.apply(lastTokSpacesAfter || (lastTokSpacesAfter = []), stateBeforeDirective.lastSpacesAfter);
-      } else {
-        tokSpacesBefore = stateBeforeDirective.spacesBefore;
-        lastTokSpacesAfter = stateBeforeDirective.lastSpacesAfter;
-      }
-      tokSpaces = stateBeforeDirective.spaces;
-      tokSpacesAfter = stateBeforeDirective.spacesAfter;
-    }
-  }
-
-  function readToken_stringify() {
-    skipSpace();
-    next();
-    // The next token should be a name
-    if (tokType === _name)
-      return finishToken(_stringifiedName, tokVal);
-    else
-      raise(tokStart, "# (stringify) must be followed by a name");
-  }
-
-  function preprocessEvalExpression(expr) {
-    return walk.recursive(expr, {}, {
-      BinaryExpression: function(node, st, c) {
-        var left = node.left, right = node.right;
-        switch (node.operator) {
-          case "+":
-            return c(left, st) + c(right, st);
-          case "-":
-            return c(left, st) - c(right, st);
-          case "*":
-            return c(left, st) * c(right, st);
-          case "/":
-            return c(left, st) / c(right, st);
-          case "%":
-            return c(left, st) % c(right, st);
-          case "<":
-            return c(left, st) < c(right, st);
-          case ">":
-            return c(left, st) > c(right, st);
-          case "=":
-          case "==":
-          case "===":
-            return c(left, st) === c(right, st);
-          case "<=":
-            return c(left, st) <= c(right, st);
-          case ">=":
-            return c(left, st) >= c(right, st);
-          case "&&":
-            return c(left, st) && c(right, st);
-          case "||":
-            return c(left, st) || c(right, st);
-        }
-      },
-      Literal: function(node, st, c) {
-        return node.value;
-      },
-      Identifier: function(node, st, c) {
-        var name = node.name,
-            macro = options.getMacro(name);
-        return (macro && parseInt(macro.macro)) || 0;
-      },
-      DefinedExpression: function(node, st, c) {
-        return !!options.getMacro(node.id.name);
-      }
-    }, {});
-  }
-
   function getTokenFromCode(code) {
     switch (code) {
       // The interpretation of a dot depends on whether it is followed
@@ -1699,6 +1331,74 @@
     return finishToken(type, word);
   }
 
+  // ## Preprocessor
+
+  // When a macro is expanded, this stack stores state information.
+
+  var macroStack;
+
+  // When a macro is expanded, the generated tokens go into this array.
+
+  var macroTokens;
+
+  // The preprocessor uses this function pointer returned by exports.tokenize
+  // in several places to get the next token.
+
+  var preprocessorGetToken;
+
+  function initPreprocessor(inpt, opts) {
+    macros = Object.create(null);
+    macroStack = [];
+    macroTokens = [];
+    tokenStream = macroTokens;
+    tokenStreamIndex = 0;
+    preprocessorState = preprocessorState_none;
+    preprocessorGetToken = exports.tokenize(inpt, opts);
+    addPredefinedMacros();
+  }
+
+  function addPredefinedMacros() {
+    if (options.objj) {
+      var token = {
+        input: "1",
+        start: 0,
+        end: 2,
+        pos: 2,
+        type: _num,
+        value: 1,
+        regexpAllowed: false
+      };
+      var macro = new Macro("__OBJJ__", [], Object.create(null), false, false, [token]);
+      options.addMacro(macro);
+    }
+  }
+
+  function setToken(t) {
+    tokInput = t.input;
+    tokStart = t.start;
+    tokEnd = t.end;
+    tokPos = t.pos;
+    tokType = t.type;
+    tokVal = t.value;
+    tokRegexpAllowed = t.regexpAllowed;
+    if (options.locations) {
+      tokStartLoc = t.startLoc;
+      tokEndLoc = t.endLoc;
+    }
+    if (options.trackComments) {
+      tokComments = t.comments;
+      tokCommentsBefore = t.commentsBefore
+      tokCommentsAfter = t.commentsAfter;
+      lastTokCommentsAfter = t.lastCommentsAfter;
+    }
+    if (options.trackSpaces) {
+      tokSpaces = t.spaces;
+      tokSpacesBefore = t.spacesBefore;
+      tokSpacesAfter = t.spacesAfter;
+      lastTokSpacesAfter = t.lastSpacesAfter;
+    }
+  }
+
   // A macro object. Note that a macro can have no parameters but still
   // be a function macro if it is defined with an empty parameter list.
 
@@ -1720,6 +1420,307 @@
 
   Macro.prototype.getParameterByName = function(identifier) {
     return this.parameterMap[identifier];
+  }
+
+  function streamReadToken() {
+    if (tokenStreamIndex < tokenStream.length) {
+      setToken(tokenStream[tokenStreamIndex++]);
+      // If we exhaust the tokens and we are reading from the macro tokens,
+      // it's time to go back to reading from source and advance.
+      if (tokenStreamIndex === tokenStream.length && tokenStream === macroTokens) {
+        readToken = sourceReadToken;
+        skipSpace = sourceSkipSpace;
+        setStrict = sourceSetStrict;
+        nextToken();
+      }
+    }
+    else
+      finishToken(_eof);
+  }
+
+  function streamSkipSpace() { }
+
+  function streamSetStrict(strct) {
+    strict = strct;
+  }
+
+  function read_preDefine() {
+    next();
+    var macroIdentifierEnd = tokEnd;
+    var name = tokVal;
+    expect(_name, "Expected a name after #define");
+    if (name === "__VA_ARGS__")
+      raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
+
+    var parameters = [];
+    var parameterMap = Object.create(null);  // Don't inherit from Object
+    var isFunction = false;
+    var isVariadic = false;
+    // '(' Must follow directly after identifier to be a valid macro with parameters
+    if (input.charCodeAt(macroIdentifierEnd) === 40) { // '('
+      // Read macro parameters
+      expect(_parenL);
+      isFunction = true;
+      var expectComma = false;
+      while (tokType !== _parenR) {
+        if (expectComma) {
+          expect(_comma, "Expected ',' between macro parameters");
+          expectComma = false;
+        }
+        else if (tokType === _name) {
+          if (tokVal === "__VA_ARGS__")
+            raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
+
+          var parameter = {
+            identifier: tokVal,
+            expand: false,
+            stringify: false
+          };
+          parameters.push(parameter);
+          parameterMap[parameter.identifier] = parameter;
+          next();
+          expectComma = true;
+        }
+        else if (tokType === _dotdotdot) {
+          isVariadic = true;
+          next();
+          if (tokType !== _parenR)
+            raise(tokStart, "Expect ')' after ... in a macro parameter list");
+          break;
+        }
+        else {
+          raise(tokStart, "Unexpected token in macro parameters");
+        }
+      }
+      preprocessorState = preprocessorState_macroBody;
+      next();
+    }
+    else
+      preprocessorState = preprocessorState_macroBody;
+    var tokens = [];
+    // Read macro body tokens until eof or eol that is not preceded by '\'
+    scanBody:
+    for (;;) {
+      switch (tokType) {
+        case _preLineContinuation: // '\'
+          skipSpace();
+          if (lastTokType !== _eol)
+            raise(tokPos, "Expected EOL after '\\'");
+          continue;
+
+        case _name:
+        case _stringifiedName:
+          if (!isVariadic && tokVal === "__VA_ARGS__")
+            raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
+          break;
+
+        case _eol:
+        case _eof:
+          break scanBody;
+      }
+      tokens.push(makeToken());
+      next();
+    }
+    // ## cannot be at the beginning or end
+    if (tokens.length > 0) {
+      if (tokens[0].type === _preTokenPaste)
+        raise(tokens[0].start, "## may not be at the beginning of a macro");
+      else if (tokens[tokens.length - 1].type === _preTokenPaste)
+        raise(tokens[tokens.length - 1].start, "## may not be at the end of a macro");
+    }
+    options.addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, tokens));
+  }
+
+  function readToken_preprocess() { // '#'
+    // If comments/spaces are being tracked, save the state so the next non-preprocess token
+    // can capture comments/spaces that came before this token.
+    finishToken(_preprocess);
+    var stateBeforeDirective;
+    if (options.trackComments || options.trackSpaces)
+      stateBeforeDirective = makeToken();
+    next();
+    preprocessorState = preprocessorState_directive;
+    switch (tokType) {
+      case _preDefine:
+        read_preDefine();
+        break;
+
+      case _preUndef:
+        next();
+        var name = tokVal;
+        expect(_name, "Expected a name after #undef");
+        options.undefineMacro(name);
+        eat(_eol);
+        break;
+
+      case _preIf:
+        if (preNotSkipping) {
+          preIfLevel++;
+          preprocessReadToken();
+          var expr = preprocessParseExpression();
+          var test = preprocessEvalExpression(expr);
+          if (!test) {
+            preNotSkipping = false;
+            preprocessSkipToElseOrEndif();
+          }
+        } else {
+          finishToken(_preIf);
+        }
+        break;
+
+      case _preIfdef:
+        if (preNotSkipping) {
+          preIfLevel++;
+          preprocessReadToken();
+          var ident = preprocessGetIdent();
+          var test = options.getMacro(ident);
+          if (!test) {
+            preNotSkipping = false
+            preprocessSkipToElseOrEndif();
+          }
+        } else {
+          //preprocesSkipRestOfLine();
+          finishToken(_preIfdef);
+        }
+        break;
+
+      case _preIfndef:
+        if (preNotSkipping) {
+          preIfLevel++;
+          preprocessReadToken();
+          var ident = preprocessGetIdent();
+          var test = options.getMacro(ident);
+          if (test) {
+            preNotSkipping = false
+            preprocessSkipToElseOrEndif();
+          }
+        } else {
+          //preprocesSkipRestOfLine();
+          finishToken(_preIfndef);
+        }
+        break;
+
+      case _preElse:
+        if (preIfLevel) {
+          if (preNotSkipping) {
+            preNotSkipping = false;
+            finishToken(_preElse);
+            preprocessReadToken();
+            preprocessSkipToElseOrEndif(true); // no else
+          } else {
+            finishToken(_preElse);
+          }
+        } else
+          raise(preTokStart, "#else without #if");
+        break;
+
+      case _preEndif:
+        if (preIfLevel) {
+          if (preNotSkipping) {
+            preIfLevel--;
+            break;
+          }
+        } else {
+          raise(preTokStart, "#endif without #if");
+        }
+        finishToken(_preEndif);
+        break;
+
+      case _prePragma:
+        preprocesSkipRestOfLine();
+        break;
+
+      case _prefix:
+        preprocesSkipRestOfLine();
+        break;
+
+      default:
+        raise(tokStart, "Invalid preprocessing directive");
+    }
+
+    preprocessorState = preprocessorState_none;
+
+    if (options.trackComments) {
+      // If there are comments after the directive, coalesce them with the ones before
+      if (stateBeforeDirective.commentsBefore !== null) {
+        Array.prototype.unshift.apply(tokCommentsBefore || (tokCommentsBefore = []), stateBeforeDirective.commentsBefore);
+        Array.prototype.unshift.apply(lastTokCommentsAfter || (lastTokCommentsAfter = []), stateBeforeDirective.lastCommentsAfter);
+      } else {
+        tokCommentsBefore = stateBeforeDirective.commentsBefore;
+        lastTokCommentsAfter = stateBeforeDirective.lastCommentsAfter;
+      }
+      tokComments = stateBeforeDirective.comments;
+      tokCommentsAfter = stateBeforeDirective.commentsAfter;
+    }
+    if (options.trackSpaces) {
+      // If there are spaces after the directive, coalesce them with the ones before
+      if (stateBeforeDirective.spacesBefore !== null) {
+        Array.prototype.unshift.apply(tokSpacesBefore || (tokSpacesBefore = []), stateBeforeDirective.spacesBefore);
+        Array.prototype.unshift.apply(lastTokSpacesAfter || (lastTokSpacesAfter = []), stateBeforeDirective.lastSpacesAfter);
+      } else {
+        tokSpacesBefore = stateBeforeDirective.spacesBefore;
+        lastTokSpacesAfter = stateBeforeDirective.lastSpacesAfter;
+      }
+      tokSpaces = stateBeforeDirective.spaces;
+      tokSpacesAfter = stateBeforeDirective.spacesAfter;
+    }
+  }
+
+  function readToken_stringify() {
+    skipSpace();
+    next();
+    // The next token should be a name
+    if (tokType === _name)
+      return finishToken(_stringifiedName, tokVal);
+    else
+      raise(tokStart, "# (stringify) must be followed by a name");
+  }
+
+  function preprocessEvalExpression(expr) {
+    return walk.recursive(expr, {}, {
+      BinaryExpression: function(node, st, c) {
+        var left = node.left, right = node.right;
+        switch (node.operator) {
+          case "+":
+            return c(left, st) + c(right, st);
+          case "-":
+            return c(left, st) - c(right, st);
+          case "*":
+            return c(left, st) * c(right, st);
+          case "/":
+            return c(left, st) / c(right, st);
+          case "%":
+            return c(left, st) % c(right, st);
+          case "<":
+            return c(left, st) < c(right, st);
+          case ">":
+            return c(left, st) > c(right, st);
+          case "=":
+          case "==":
+          case "===":
+            return c(left, st) === c(right, st);
+          case "<=":
+            return c(left, st) <= c(right, st);
+          case ">=":
+            return c(left, st) >= c(right, st);
+          case "&&":
+            return c(left, st) && c(right, st);
+          case "||":
+            return c(left, st) || c(right, st);
+        }
+      },
+      Literal: function(node, st, c) {
+        return node.value;
+      },
+      Identifier: function(node, st, c) {
+        var name = node.name,
+            macro = options.getMacro(name);
+        return (macro && parseInt(macro.macro)) || 0;
+      },
+      DefinedExpression: function(node, st, c) {
+        return !!options.getMacro(node.id.name);
+      }
+    }, {});
   }
 
   function pushMacro(macro, context) {
