@@ -1157,12 +1157,12 @@
   }
 
   function readToken_preprocess() { // '#'
-    // If comments/spaces are being tracked, save the state so the next real token can capture
-    // comments/spaces that came before this token.
+    // If comments/spaces are being tracked, save the state so the next non-preprocess token
+    // can capture comments/spaces that came before this token.
     finishToken(_preprocess);
-    var savedState;
+    var stateBeforeDirective;
     if (options.trackComments || options.trackSpaces)
-      savedState = makeToken();
+      stateBeforeDirective = makeToken();
     next();
     preprocessorState = preprocessorState_directive;
     switch (tokType) {
@@ -1266,15 +1266,28 @@
     preprocessorState = preprocessorState_none;
 
     if (options.trackComments) {
-      tokComments = savedState.comments;
-      tokCommentsBefore = savedState.commentsBefore;
-      tokCommentsAfter = savedState.commentsAfter;
-      lastTokCommentsAfter = savedState.lastCommentsAfter;
+      // If there are comments after the directive, coalesce them with the ones before
+      if (stateBeforeDirective.commentsBefore !== null) {
+        Array.prototype.unshift.apply(tokCommentsBefore || (tokCommentsBefore = []), stateBeforeDirective.commentsBefore);
+        Array.prototype.unshift.apply(lastTokCommentsAfter || (lastTokCommentsAfter = []), stateBeforeDirective.lastTokCommentsAfter);
+      } else {
+        tokCommentsBefore = stateBeforeDirective.commentsBefore;
+        lastTokCommentsAfter = stateBeforeDirective.lastCommentsAfter;
+      }
+      tokComments = stateBeforeDirective.comments;
+      tokCommentsAfter = stateBeforeDirective.commentsAfter;
     }
     if (options.trackSpaces) {
-      tokSpaces = savedState.spaces;
-      tokSpacesBefore = savedState.spacesBefore;
-      tokSpacesAfter = savedState.spacesAfter;
+      // If there are spaces after the directive, coalesce them with the ones before
+      if (stateBeforeDirective.spacesBefore !== null) {
+        Array.prototype.unshift.apply(tokSpacesBefore || (tokSpacesBefore = []), stateBeforeDirective.spacesBefore);
+        Array.prototype.unshift.apply(lastTokSpacesAfter || (lastTokSpacesAfter = []), stateBeforeDirective.lastTokSpacesAfter);
+      } else {
+        tokSpacesBefore = stateBeforeDirective.spacesBefore;
+        lastTokSpacesAfter = stateBeforeDirective.lastSpacesAfter;
+      }
+      tokSpaces = stateBeforeDirective.spaces;
+      tokSpacesAfter = stateBeforeDirective.spacesAfter;
     }
   }
 
