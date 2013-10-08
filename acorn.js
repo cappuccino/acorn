@@ -859,7 +859,7 @@
       } else if (ch > 8 && ch < 14) {
         ++tokPos;
       } else if (ch === 47) { // '/'
-        var next = input.charCodeAt(tokPos+1);
+        var next = input.charCodeAt(tokPos + 1);
         if (next === 42) { // '*'
           if (options.trackSpaces && preprocessorState === preprocessorState_none)
             (tokSpaces || (tokSpaces = [])).push(input.slice(spaceStart, tokPos));
@@ -894,7 +894,7 @@
   // `tokRegexpAllowed` trick does not work. See `parseStatement`.
 
   function readToken_dot(code) {
-    var next = input.charCodeAt(tokPos+1);
+    var next = input.charCodeAt(tokPos + 1);
     if (next >= 48 && next <= 57) return readNumber(String.fromCharCode(code));
     if (next === 46 && options.objj && input.charCodeAt(tokPos+2) === 46) { //'.'
       tokPos += 3;
@@ -905,33 +905,33 @@
   }
 
   function readToken_slash() { // '/'
-    var next = input.charCodeAt(tokPos+1);
+    var next = input.charCodeAt(tokPos + 1);
     if (tokRegexpAllowed) {++tokPos; return readRegexp();}
     if (next === 61) return finishOp(_assign, 2);
     return finishOp(_slash, 1);
   }
 
   function readToken_mult_modulo() { // '%*'
-    var next = input.charCodeAt(tokPos+1);
+    var next = input.charCodeAt(tokPos + 1);
     if (next === 61) return finishOp(_assign, 2);
     return finishOp(_bin10, 1);
   }
 
   function readToken_pipe_amp(code) { // '|&'
-    var next = input.charCodeAt(tokPos+1);
+    var next = input.charCodeAt(tokPos + 1);
     if (next === code) return finishOp(code === 124 ? _bin1 : _bin2, 2);
     if (next === 61) return finishOp(_assign, 2);
     return finishOp(code === 124 ? _bin3 : _bin5, 1);
   }
 
   function readToken_caret() { // '^'
-    var next = input.charCodeAt(tokPos+1);
+    var next = input.charCodeAt(tokPos + 1);
     if (next === 61) return finishOp(_assign, 2);
     return finishOp(_bin4, 1);
   }
 
   function readToken_plus_min(code) { // '+-'
-    var next = input.charCodeAt(tokPos+1);
+    var next = input.charCodeAt(tokPos + 1);
     if (next === code) return finishOp(_incdec, 2);
     if (next === 61) return finishOp(_assign, 2);
     return finishOp(_plusmin, 1);
@@ -947,7 +947,7 @@
           raise(tokStart, "Unterminated import statement");
       }
     }
-    var next = input.charCodeAt(tokPos+1);
+    var next = input.charCodeAt(tokPos + 1);
     var size = 1;
     if (next === code) {
       size = code === 62 && input.charCodeAt(tokPos+2) === 62 ? 3 : 2;
@@ -960,7 +960,7 @@
   }
 
   function readToken_eq_excl(code) { // '=!'
-    var next = input.charCodeAt(tokPos+1);
+    var next = input.charCodeAt(tokPos + 1);
     if (next === 61) return finishOp(_bin6, input.charCodeAt(tokPos+2) === 61 ? 3 : 2);
     return finishOp(code === 61 ? _eq : _prefix, 1);
   }
@@ -1305,7 +1305,7 @@
     return walk.recursive(expr, {}, {
       BinaryExpression: function(node, st, c) {
         var left = node.left, right = node.right;
-        switch(node.operator) {
+        switch (node.operator) {
           case "+":
             return c(left, st) + c(right, st);
           case "-":
@@ -1369,7 +1369,7 @@
 
       // '0x' is a hexadecimal number.
     case 48: // '0'
-      var next = input.charCodeAt(tokPos+1);
+      var next = input.charCodeAt(tokPos + 1);
       if (next === 120 || next === 88) return readHexNumber();
       // Anything else beginning with a digit is an integer, octal
       // number, or float.
@@ -2873,7 +2873,7 @@
           if (!eat(_parenR)) {
             for (;;) {
               var config = parseIdent(true);
-              switch(config.name) {
+              switch (config.name) {
                 case "property":
                 case "getter":
                   expect(_eq, "Expected '=' after 'getter' accessor attribute");
