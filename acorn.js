@@ -51,8 +51,6 @@
 
   var readToken, skipSpace, setStrict;
 
-  function emptyFunction() { }
-
   exports.parse = function(inpt, opts) {
     input = String(inpt); inputLen = input.length;
     setOptions(opts);
@@ -61,7 +59,7 @@
     skipSpace = sourceSkipSpace;
     setStrict = sourceSetStrict;
     if (options.preprocess)
-      preprocess(inpt, opts);
+      initPreprocessor(inpt, opts);
     initTokenState();
     return parseTopLevel(options.program);
   };
@@ -255,6 +253,14 @@
     return "(" + pos.line + ":" + pos.column + ")";
   }
 
+  // A utility method on Array that clears all of the elements of an existing array.
+  // This is currently the fastest way of doing it. For reference: http://jsperf.com/array-destroy/32
+  Array.prototype.clear = function() {
+    while (this.length > 0) {
+      this.shift();
+    }
+  }
+
   // Acorn is organized as a tokenizer and a recursive-descent parser.
   // The `tokenize` export provides an interface to the tokenizer.
   // Because the tokenizer is optimized for being efficiently used by
@@ -267,6 +273,7 @@
       input: input,
       start: tokStart,
       end: tokEnd,
+      pos: tokPos,
       type: tokType,
       value: tokVal,
       regexpAllowed: tokRegexpAllowed
@@ -276,11 +283,13 @@
       t.endLoc = tokEndLoc;
     }
     if (options.trackComments) {
+      t.comments = tokComments;
       t.commentsBefore = tokCommentsBefore;
       t.commentsAfter = tokCommentsAfter;
       t.lastCommentsAfter = lastTokCommentsAfter;
     }
     if (options.trackSpaces) {
+      t.spaces = tokSpaces;
       t.spacesBefore = tokSpacesBefore;
       t.spacesAfter = tokSpacesAfter;
       t.lastSpacesAfter = lastTokSpacesAfter;
@@ -393,11 +402,9 @@
 
   var inFunction, labels, strict;
 
-  // When preprocessing, two passes are done: preprocessing and parsing.
-
-  // During the preprocessor pass, the tokens are stored in this array.
-  // It is switch to point to macro arguments and macro body token streams
-  // when expanding macros.
+  // When expanding a macro, the tokens are stored in this array.
+  // It is switched to point to macro arguments and macro body token streams
+  // at various points during expansion.
 
   var tokenStream;
 
@@ -757,12 +764,18 @@
     lastTokType = tokType;
     tokType = type;
     tokVal = val;
+    tokRegexpAllowed = type.beforeExpr;
+    nextToken();
+  }
+
+  // Advances to the next token, saving comments/spaces as belonging after the previous token.
+
+  function nextToken() {
     skipSpace();
     lastTokCommentsAfter = tokCommentsAfter;
     lastTokSpacesAfter = tokSpacesAfter;
     tokCommentsAfter = tokComments;
     tokSpacesAfter = tokSpaces;
-    tokRegexpAllowed = type.beforeExpr;
   }
 
   function skipBlockComment(lastIsNewlinePos) {
@@ -971,40 +984,24 @@
 
   var macroStack;
 
-  // When expanding a macro and reading from source, we need to save and restore the token
-  // after the end of the macro invocation (including arguments).
+  // When a macro is expanded, the generated tokens go into this array.
 
-  var macroTokenStack;
+  var macroTokens;
 
   // The preprocessor uses this function pointer returned by exports.tokenize
   // in several places to get the next token.
 
   var preprocessorGetToken;
 
-  function preprocess(inpt, opts) {
+  function initPreprocessor(inpt, opts) {
     macros = Object.create(null);
     macroStack = [];
-    macroTokenStack = [];
-    tokenStream = [];
-    // The index is not used unless we are reading from a tokenStream
-    tokenStreamIndex = null;
+    macroTokens = [];
+    tokenStream = macroTokens;
+    tokenStreamIndex = 0;
     preprocessorState = preprocessorState_none;
     preprocessorGetToken = exports.tokenize(inpt, opts);
     addPredefinedMacros();
-    do {
-      var token = preprocessorGetToken();
-      tokenStream.push(token);
-      if (tokType.prefix)
-        tokRegexpAllowed = true;
-      else if (tokType === _name)
-        tokRegexpAllowed = false;
-    }
-    while (token.type !== _eof)
-    // In the second pass we read from the token stream
-    tokenStreamIndex = 0;
-    readToken = streamReadToken;
-    skipSpace = emptyFunction;
-    setStrict = streamSetStrict;
   }
 
   function addPredefinedMacros() {
@@ -1013,6 +1010,7 @@
         input: "1",
         start: 0,
         end: 2,
+        pos: 2,
         type: _num,
         value: 1,
         regexpAllowed: false
@@ -1026,6 +1024,7 @@
     tokInput = t.input;
     tokStart = t.start;
     tokEnd = t.end;
+    tokPos = t.pos;
     tokType = t.type;
     tokVal = t.value;
     tokRegexpAllowed = t.regexpAllowed;
@@ -1034,11 +1033,13 @@
       tokEndLoc = t.endLoc;
     }
     if (options.trackComments) {
+      tokComments = t.comments;
       tokCommentsBefore = t.commentsBefore
       tokCommentsAfter = t.commentsAfter;
       lastTokCommentsAfter = t.lastCommentsAfter;
     }
     if (options.trackSpaces) {
+      tokSpaces = t.spaces;
       tokSpacesBefore = t.spacesBefore;
       tokSpacesAfter = t.spacesAfter;
       lastTokSpacesAfter = t.lastSpacesAfter;
@@ -1046,11 +1047,22 @@
   }
 
   function streamReadToken() {
-    if (tokenStreamIndex < tokenStream.length)
+    if (tokenStreamIndex < tokenStream.length) {
       setToken(tokenStream[tokenStreamIndex++]);
+      // If we exhaust the tokens and we are reading from the macro tokens,
+      // it's time to go back to reading from source and advance.
+      if (tokenStreamIndex === tokenStream.length && tokenStream === macroTokens) {
+        readToken = sourceReadToken;
+        skipSpace = sourceSkipSpace;
+        setStrict = sourceSetStrict;
+        nextToken();
+      }
+    }
     else
       finishToken(_eof);
   }
+
+  function streamSkipSpace() { }
 
   function streamSetStrict(strct) {
     strict = strct;
@@ -1134,7 +1146,7 @@
       next();
     }
     // ## cannot be at the beginning or end
-    if (tokens.length !== 0) {
+    if (tokens.length > 0) {
       if (tokens[0].type === _preTokenPaste)
         raise(tokens[0].start, "## may not be at the beginning of a macro");
       else if (tokens[tokens.length - 1].type === _preTokenPaste)
@@ -1145,6 +1157,12 @@
   }
 
   function readToken_preprocess() { // '#'
+    // If comments/spaces are being tracked, save the state so the next real token can capture
+    // comments/spaces that came before this token.
+    finishToken(_preprocess);
+    var savedState;
+    if (options.trackComments || options.trackSpaces)
+      savedState = makeToken();
     next();
     preprocessorState = preprocessorState_directive;
     switch (tokType) {
@@ -1246,6 +1264,18 @@
     }
 
     preprocessorState = preprocessorState_none;
+
+    if (options.trackComments) {
+      tokComments = savedState.comments;
+      tokCommentsBefore = savedState.commentsBefore;
+      tokCommentsAfter = savedState.commentsAfter;
+      lastTokCommentsAfter = savedState.lastCommentsAfter;
+    }
+    if (options.trackSpaces) {
+      tokSpaces = savedState.spaces;
+      tokSpacesBefore = savedState.spacesBefore;
+      tokSpacesAfter = savedState.spacesAfter;
+    }
   }
 
   function readToken_stringify() {
@@ -1388,7 +1418,6 @@
           // Preprocessor directives are only valid at the beginning of the line
           if (tokenStream.length > 0 && lastTokType !== _eol)
             raise(--tokPos, "Preprocessor directives may only be used at the beginning of a line");
-          finishToken(_preprocess);
           return readToken_preprocess();
         }
       }
@@ -1639,15 +1668,13 @@
     var word = preReadWord || readWord1();
     var type = _name;
     if (!containsEsc) {
-      if (options.preprocess) {
-        if (preprocessorState === preprocessorState_none) {
-          if (tokType === _preprocess && isKeywordPreprocessor(word))
-            return finishToken(keywordTypesPreprocessor[word], word);
-          else {
-            var macro;
-            if ((macro = options.getMacro(word)) !== undefined)
-              return expandMacro(macro, tokenStream);
-          }
+      if (options.preprocess && preprocessorState === preprocessorState_none) {
+        if (tokType === _preprocess && isKeywordPreprocessor(word))
+          return finishToken(keywordTypesPreprocessor[word], word);
+        else {
+          var macro;
+          if ((macro = options.getMacro(word)) !== undefined)
+            return expandMacro(macro, tokenStream);
         }
       }
       if (isKeyword(word)) type = keywordTypes[word];
@@ -1684,46 +1711,47 @@
   }
 
   function pushMacro(macro, context) {
-    finishToken(_name, macro.identifier);
-    var info = {macro: macro};
-    if (context !== undefined) {
-      info.readToken = readToken;
-      info.skipSpace = skipSpace;
-      info.setStrict = setStrict;
-      info.tokenStream = tokenStream;
-      info.tokenStreamIndex = tokenStreamIndex;
-
+    var state;
+    if (context === undefined) {
+      // If we are reading from source, clear macroTokens to receive a new expansion
+      macroTokens.clear();
+      tokenStreamIndex = 0;
+      state = {
+        macro: macro,
+        lastStart: lastStart,
+        lastEnd: lastEnd
+      };
+    } else {
+      state = {
+        macro: macro,
+        readToken: readToken,
+        skipSpace: skipSpace,
+        setStrict: setStrict,
+        tokenStream: tokenStream,
+        tokenStreamIndex: tokenStreamIndex
+      };
       tokenStream = context.tokens;
       tokenStreamIndex = context.tokenIndex;
     }
-
-    macroStack.push(info);
+    macroStack.push(state);
     // If we are nested, we are reading from a token stream, not input
     if (macroStack.length === 2) {
       readToken = streamReadToken;
-      skipSpace = emptyFunction;
+      skipSpace = streamSkipSpace;
       setStrict = streamSetStrict;
     }
   }
 
   function popMacro(context) {
-    var info = macroStack.pop();
+    var state = macroStack.pop();
     if (context !== undefined) {
       // Communicate to the macro caller where we stopped parsing its token stream.
       context.tokenIndex = tokenStreamIndex - 1;
-      readToken = info.readToken;
-      skipSpace = info.skipSpace;
-      setStrict = info.setStrict;
-      tokenStream = info.tokenStream;
-      tokenStreamIndex = info.tokenStreamIndex;
-    } else {
-      if (macroTokenStack.length > 0) {
-        setToken(macroTokenStack.pop());
-        // If we are parsing source, skip to the next token after the macro call
-        skipSpace();
-      }
-      else
-        finishToken(_eof);
+      readToken = state.readToken;
+      skipSpace = state.skipSpace;
+      setStrict = state.setStrict;
+      tokenStream = state.tokenStream;
+      tokenStreamIndex = state.tokenStreamIndex;
     }
   }
 
@@ -1739,40 +1767,92 @@
     return false;
   }
 
+  /*
+    When we expand a macro from source, we have to stitch replace the macro invocation tokens
+    with the tokens generated by expanding the macro. So here is the strategy:
+
+    - When we get to here, the state is as follows:
+
+      tokPos: end of the macro name
+      tokType: type of the previous token
+      lastStart, lastEnd: start/end of the previous token
+
+    - Save lastStart, lastEnd.
+    - Call finishToken() and save the state of the macro name token.
+    - Parse the macro's args (if any). At that point we will have reached the token
+      after the last token in the macro call:
+
+      tokPos: end of the token
+      tokType: type of the token
+      lastStart, lastEnd: start/end of the last token in the macro call
+
+    - If the macro is a function macro but did not have any arguments, it will be inserted
+      as a regular name, in which case we don't do anything special.
+    - Otherwise, for the purposes of generating positions in the AST, we want to ignore the tokens
+      in the macro call. So we set lastStart/lastEnd to tokStart/tokEnd to that of the token
+      *before* the macro call, then save that state as a token.
+    - Expand the macro call into an array of tokens.
+    - Append the adjusted token after the macro call to the token array.
+    - Point readToken, skipSpace, and setStrict to the streamX functions.
+    - Call next() to load the first generated token.
+    - When readToken() exhausts the macro token array, set readToken,
+      skipSpace and setStrict to the sourceX functions so the next token
+      will come from the source.
+
+    Note that no attempt is made to capture comments or space before or after a macro call.
+  */
+
   function expandMacro(macro, expandedTokens, context) {
     pushMacro(macro, context);
     // Save the macro name as a token in case it is a function macro which has no arguments
+    finishToken(_name, macro.identifier);
     var nameToken = makeToken();
     var savedState = preprocessorState;
     preprocessorState = preprocessorState_macroExpansion;
     next();
     var isMacroCall = true;
     var args = null;
+    var tokenAfterMacro;
     if (macro.isFunction) {
       // A function macro that has no arguments is treated as a name
-      if (eat(_parenL)) {
+      if (eat(_parenL))
         args = parseMacroArguments(macro, context);
-      } else {
+      else
         isMacroCall = false;
-        expandedTokens.push(nameToken);
-      }
     }
+    // We are now pointing at the token after the last one in the macro call.
+    // If the macro will be expanded, save some state.
     if (context === undefined) {
-      // Save where we are if we are reading from source
-      macroTokenStack.push(makeToken());
-    }
-    if (args === null) {
-      if (tokType !== _eof) {
-        // If the macro has no args and is nested and we have not reached the end of
-        // the token stream, the next() above pushed us past the token *after* the macro call,
-        // which the caller will want to read again. So we back up one token in the stream.
-        --tokenStreamIndex;
+      if (isMacroCall) {
+        // Save an adjusted version of the current token as outlined above
+        var stateBefore = macroStack[0];
+        lastStart = stateBefore.lastStart;
+        lastEnd = stateBefore.lastEnd;
+        tokenAfterMacro = makeToken();
       }
+    }
+    else if (args === null && tokType !== _eof) {
+      // If the macro has no args and is nested and we have not reached the end of
+      // the token stream, the next() above pushed us past the token *after* the macro call,
+      // which the caller will want to read again. So we back up one token in the stream.
+      --tokenStreamIndex;
     }
     if (isMacroCall)
       expandMacroBody(macro, args, expandedTokens);
     preprocessorState = savedState;
     popMacro(context);
+    if (context === undefined) {
+      if (isMacroCall) {
+        macroTokens.push(tokenAfterMacro);
+        readToken = streamReadToken;
+        skipSpace = streamSkipSpace;
+        setStrict = streamSetStrict;
+        next();
+      } else {
+        setToken(nameToken);
+        skipSpace();
+      }
+    }
     return isMacroCall;
   }
 
@@ -1795,7 +1875,7 @@
           if (--parenLevel === 0) {
             // If there are no args so far and this one is empty, that means no args were passed.
             // If there were args previously and this one is empty, it's an empty arg.
-            if (args.length !== 0 || arg.tokens.length !== 0)
+            if (args.length > 0 || arg.tokens.length > 0)
               args.push(arg);
             // Don't go to the next token if we are nested, because we are already pointing
             // just past the first token after the macro args.
@@ -1921,7 +2001,7 @@
   function expandMacroBody(macro, args, expandedTokens) {
     // Expansion requires two passes. The first pass does argument substitution.
     var bodyTokens = [];
-    if (macro.parameters.length !== 0 || macro.isVariadic)
+    if (macro.parameters.length > 0 || macro.isVariadic)
       substituteMacroArguments(macro, args, bodyTokens);
     else
       // If the macro has no parameters, we can just iterate through its tokens.
@@ -1997,7 +2077,7 @@
       i += 2;
     }
     while (i <= lastPasteIndex && macro.tokens[i + 1].type === _preTokenPaste);
-    if (pastedTokens.length !== 0) {
+    if (pastedTokens.length > 0) {
       Array.prototype.push.apply(bodyTokens, pastedTokens);
       return i;
     }
@@ -2012,7 +2092,7 @@
     for (var i = 0; i < toks.length; ++i) {
       if (lookupMacroParameter(macro, toks[i])) {
         var arg = args[toks[i].macroParameter.index];
-        if (arg.tokens.length !== 0) {
+        if (arg.tokens.length > 0) {
           // When pasting, arguments are *not* expanded, but they can be stringified
           if (toks[i].type === _name)
             tokensToPaste[i] = arg.tokens.slice(0);
@@ -2033,7 +2113,7 @@
       rightToken = tokensToPaste[1].shift();
       // If we are going to paste, and there are tokens from a previous paste
       // in the series, then we have to replace the last token with the pasted one.
-      if (pastedTokens.length !== 0)
+      if (pastedTokens.length > 0)
         pastedTokens.pop();
     }
     Array.prototype.push.apply(pastedTokens, tokensToPaste[0]);
@@ -2458,6 +2538,7 @@
         var init = startNode();
         next();
         parseVar(init, true);
+        finishNode(init, "VariableDeclaration");
         if (init.declarations.length === 1 && eat(_in))
           return parseForIn(node, init);
         return parseFor(node, init);
@@ -2555,9 +2636,9 @@
 
     case _var:
       next();
-      node = parseVar(node);
+      parseVar(node);
       semicolon();
-      return node;
+      return finishNode(node, "VariableDeclaration");;
 
     case _while:
       next();
@@ -2959,7 +3040,7 @@
       node.declarations.push(finishNode(decl, "VariableDeclarator"));
       if (!eat(_comma)) break;
     }
-    return finishNode(node, "VariableDeclaration");
+    return node;
   }
 
   // ### Expression parsing
