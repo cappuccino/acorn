@@ -1269,7 +1269,7 @@
       // If there are comments after the directive, coalesce them with the ones before
       if (stateBeforeDirective.commentsBefore !== null) {
         Array.prototype.unshift.apply(tokCommentsBefore || (tokCommentsBefore = []), stateBeforeDirective.commentsBefore);
-        Array.prototype.unshift.apply(lastTokCommentsAfter || (lastTokCommentsAfter = []), stateBeforeDirective.lastTokCommentsAfter);
+        Array.prototype.unshift.apply(lastTokCommentsAfter || (lastTokCommentsAfter = []), stateBeforeDirective.lastCommentsAfter);
       } else {
         tokCommentsBefore = stateBeforeDirective.commentsBefore;
         lastTokCommentsAfter = stateBeforeDirective.lastCommentsAfter;
@@ -1281,7 +1281,7 @@
       // If there are spaces after the directive, coalesce them with the ones before
       if (stateBeforeDirective.spacesBefore !== null) {
         Array.prototype.unshift.apply(tokSpacesBefore || (tokSpacesBefore = []), stateBeforeDirective.spacesBefore);
-        Array.prototype.unshift.apply(lastTokSpacesAfter || (lastTokSpacesAfter = []), stateBeforeDirective.lastTokSpacesAfter);
+        Array.prototype.unshift.apply(lastTokSpacesAfter || (lastTokSpacesAfter = []), stateBeforeDirective.lastSpacesAfter);
       } else {
         tokSpacesBefore = stateBeforeDirective.spacesBefore;
         lastTokSpacesAfter = stateBeforeDirective.lastSpacesAfter;
