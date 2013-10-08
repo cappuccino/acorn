@@ -419,8 +419,9 @@
   var preprocessorState_none = 0;  // Not handling preprocessor directives
   var preprocessorState_directive = 1;  // Parsing a preprocessor directive
   var preprocessorState_macroBody = 2;  // Parsing a macro body
-  var preprocessorState_macroExpansion = 3;  // Expanding a macro call
-  var preprocessorState_skipping = 4;  // Skipping to #else/#endif
+  var preprocessorState_postDirective = 3;  // Finished parsing a macro body, but macro is not yet stored
+  var preprocessorState_macroExpansion = 4;  // Expanding a macro call
+  var preprocessorState_skipping = 5;  // Skipping to #else/#endif
 
   // This function is used to raise exceptions on parse errors. It
   // takes either a `{line, column}` object or an offset integer (into
@@ -527,7 +528,6 @@
 
   // Special tokens used within a macro body only
 
-  var _preLineContinuation = {type: "\\"};
   var _preTokenPaste = {type: "##"};
   var _stringifiedName = {type: "stringified name"};
 
@@ -832,7 +832,7 @@
       if (ch === 32) { // ' '
         ++tokPos;
       } else if (ch === 13) {
-        if (preprocessorState > preprocessorState_none)
+        if (preprocessorState === preprocessorState_directive || preprocessorState === preprocessorState_macroBody)
           break;
         lastIsNewlinePos = tokPos;
         ++tokPos;
@@ -847,12 +847,14 @@
         // Inform the preprocessor that we saw eol
         lastTokType = _eol;
       } else if (ch === 10 || ch === 8232 || ch === 8233) {
-        if (preprocessorState > preprocessorState_none)
+        if (preprocessorState === preprocessorState_directive || preprocessorState === preprocessorState_macroBody)
           break;
         lastIsNewlinePos = tokPos;
         ++tokPos;
-        ++tokCurLine;
-        tokLineStart = tokPos;
+        if (options.locations) {
+          ++tokCurLine;
+          tokLineStart = tokPos;
+        }
         // Inform the preprocessor that we saw eol
         lastTokType = _eol;
       } else if (ch > 8 && ch < 14) {
@@ -870,6 +872,24 @@
           skipLineComment(lastIsNewlinePos);
           spaceStart = tokPos;
         } else break;
+      } else if (ch === 92 && preprocessorState === preprocessorState_macroBody) { // '\'
+        // The gcc docs say that newline must immediately follow
+        ++tokPos;
+        var haveNewline = false;
+        ch = input.charCodeAt(tokPos);
+        if (ch === 10) {
+          haveNewline = true;
+          ++tokPos;
+        }
+        else if (ch === 13) {
+          haveNewline = true;
+          ++tokPos;
+          if (input.charCodeAt(tokPos + 1) === 10)
+            ++tokPos;
+        }
+        if (!haveNewline)
+          raise(tokPos, "Expected EOL after '\\'");
+        // Keep reading, the '\' is treated as whitespace
       } else if (ch === 160) { // '\xa0'
         ++tokPos;
       } else if (ch >= 5760 && nonASCIIwhitespace.test(String.fromCharCode(ch))) {
@@ -1058,33 +1078,29 @@
           else
             return readToken_stringify();
         }
-        if (preprocessorState === preprocessorState_none) {
+        if (preprocessorState === preprocessorState_none || preprocessorState === preprocessorState_postDirective) {
           // Preprocessor directives are only valid at the beginning of the line
-          if (tokenStream.length > 0 && lastTokType !== _eol)
+          if (lastTokType !== _eol)
             raise(--tokPos, "Preprocessor directives may only be used at the beginning of a line");
-          return readToken_preprocess();
+          return finishToken(_preprocess);
         }
       }
       return false;
 
-    case 92: // '\'
-      if (preprocessorState === preprocessorState_macroBody) {
-        ++tokPos;
-        return finishToken(_preLineContinuation, "\\");
+    case 10:
+    case 13:
+    case 8232:
+    case 8233:
+      if (preprocessorState === preprocessorState_directive || preprocessorState === preprocessorState_macroBody) {
+        // eol terminates a preprocessor statement
+        if (preprocessorState === preprocessorState_directive)
+          preprocessorState = preprocessorState_none;
+        else
+          preprocessorState = preprocessorState_postDirective;
+        // Inform the preprocessor that we saw eol
+        finishToken(_eol);
+        return;
       }
-      else
-        return false;
-    }
-
-    if (preprocessorState > preprocessorState_none && (code === 10 || code === 13 || code === 8232 || code === 8233)) {
-      // eol terminates a preprocessor statement, unless we are in a macro body
-      // and the previous token was a backslash.
-      if (preprocessorState !== preprocessorState_macroBody || tokType !== _preLineContinuation)
-        preprocessorState = preprocessorState_none;
-      finishOp(_eol, code === 13 && input.charCodeAt(tokPos + 1) === 10 ? 2 : 1);
-      // Inform the preprocessor that we saw eol
-      lastTokType = _eol;
-      return;
     }
 
     return false;
@@ -1444,7 +1460,7 @@
     strict = strct;
   }
 
-  function read_preDefine() {
+  function parseDefine() {
     next();
     var macroIdentifierEnd = tokEnd;
     var name = tokVal;
@@ -1502,12 +1518,6 @@
     scanBody:
     for (;;) {
       switch (tokType) {
-        case _preLineContinuation: // '\'
-          skipSpace();
-          if (lastTokType !== _eol)
-            raise(tokPos, "Expected EOL after '\\'");
-          continue;
-
         case _name:
         case _stringifiedName:
           if (!isVariadic && tokVal === "__VA_ARGS__")
@@ -1515,6 +1525,9 @@
           break;
 
         case _eol:
+          next();
+          // fall through to break scanBody
+
         case _eof:
           break scanBody;
       }
@@ -1531,18 +1544,19 @@
     options.addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, tokens));
   }
 
-  function readToken_preprocess() { // '#'
+  function parsePreprocess() { // '#'
     // If comments/spaces are being tracked, save the state so the next non-preprocess token
     // can capture comments/spaces that came before this token.
-    finishToken(_preprocess);
     var stateBeforeDirective;
     if (options.trackComments || options.trackSpaces)
       stateBeforeDirective = makeToken();
     next();
     preprocessorState = preprocessorState_directive;
+    var checkForMacro = false;
     switch (tokType) {
       case _preDefine:
-        read_preDefine();
+        parseDefine();
+        checkForMacro = true;
         break;
 
       case _preUndef:
@@ -1551,6 +1565,7 @@
         expect(_name, "Expected a name after #undef");
         options.undefineMacro(name);
         eat(_eol);
+        checkForMacro = true;
         break;
 
       case _preIf:
@@ -1663,6 +1678,15 @@
       }
       tokSpaces = stateBeforeDirective.spaces;
       tokSpacesAfter = stateBeforeDirective.spacesAfter;
+    }
+
+    if (checkForMacro && tokType === _name) {
+      // If the current token at this point is a name, it could be a macro because macro names
+      // are not looked up during macro definition. We have to wait until now to expand the macro
+      // to ensure it is defined and that comments/spaces before it are handled correctly.
+      var macro;
+      if ((macro = options.getMacro(tokVal)) !== undefined)
+        expandMacro(macro, tokenStream);
     }
   }
 
@@ -2463,9 +2487,11 @@
     if (!program) node.body = [];
     while (tokType !== _eof) {
       var stmt = parseStatement();
-      node.body.push(stmt);
-      if (first && isUseStrict(stmt)) setStrict(true);
-      first = false;
+      if (stmt !== null) {
+        node.body.push(stmt);
+        if (first && isUseStrict(stmt)) setStrict(true);
+        first = false;
+      }
     }
     return finishNode(node, "Program");
   }
@@ -2824,6 +2850,11 @@
         return finishNode(node, "GlobalStatement");
       }
       break;
+
+    // Preprocessor
+    case _preprocess:
+      parsePreprocess();
+      return null;
     }
 
       // The indentation is one step to the right here to make sure it
