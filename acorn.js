@@ -282,6 +282,8 @@
     if (options.locations) {
       t.startLoc = tokStartLoc;
       t.endLoc = tokEndLoc;
+      t.curLine = tokCurLine;
+      t.lineStart = tokLineStart;
     }
     if (options.trackComments) {
       t.comments = tokComments;
@@ -355,10 +357,6 @@
   // This variable holds the source to which tokStart and tokEnd point.
 
   var tokInput;
-
-  // When preprocessing, we need to know if the last token was eol.
-
-  var lastTokType;
 
   // These are used to hold arrays of comments when
   // `options.trackComments` is true.
@@ -741,7 +739,6 @@
   function finishToken(type, val) {
     tokEnd = tokPos;
     if (options.locations) tokEndLoc = new line_loc_t;
-    lastTokType = tokType;
     tokType = type;
     tokVal = val;
     tokRegexpAllowed = type.beforeExpr;
@@ -817,7 +814,6 @@
           tokLineStart = tokPos;
         }
         // Inform the preprocessor that we saw eol
-        lastTokType = _eol;
         firstTokenOnLine = true;
       } else if (ch === 10 || ch === 8232 || ch === 8233) {
         if (preprocessorState === preprocessorState_directive || preprocessorState === preprocessorState_macroBody)
@@ -829,7 +825,6 @@
           tokLineStart = tokPos;
         }
         // Inform the preprocessor that we saw eol
-        lastTokType = _eol;
         firstTokenOnLine = true;
       } else if (ch > 8 && ch < 14) {
         ++tokPos;
@@ -851,6 +846,7 @@
         ++tokPos;
         var haveNewline = false;
         ch = input.charCodeAt(tokPos);
+        lastIsNewlinePos = tokPos;
         if (ch === 10) {
           haveNewline = true;
           ++tokPos;
@@ -863,6 +859,10 @@
         }
         if (!haveNewline)
           raise(tokPos, "Expected EOL after '\\'");
+        if (options.locations) {
+          ++tokCurLine;
+          tokLineStart = tokPos;
+        }
         // Keep reading, the '\' is treated as whitespace
       } else if (ch === 160) { // '\xa0'
         ++tokPos;
@@ -1401,6 +1401,8 @@
     if (options.locations) {
       tokStartLoc = t.startLoc;
       tokEndLoc = t.endLoc;
+      tokCurLine = t.curLine;
+      tokLineStart = t.lineStart;
     }
     if (options.trackComments) {
       tokComments = t.comments;
