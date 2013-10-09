@@ -276,7 +276,8 @@
       pos: tokPos,
       type: tokType,
       value: tokVal,
-      regexpAllowed: tokRegexpAllowed
+      regexpAllowed: tokRegexpAllowed,
+      firstTokenOnLine: firstTokenOnLine
     };
     if (options.locations) {
       t.startLoc = tokStartLoc;
@@ -401,27 +402,6 @@
   // indicates whether strict mode is on.
 
   var inFunction, labels, strict;
-
-  // When expanding a macro, the tokens are stored in this array.
-  // It is switched to point to macro arguments and macro body token streams
-  // at various points during expansion.
-
-  var tokenStream;
-
-  // When reading from a token stream, this index points to the next
-  // token that will be returned from the current token stream.
-
-  var tokenStreamIndex;
-
-  // We need to keep track of what state the preprocessor is in.
-
-  var preprocessorState;
-  var preprocessorState_none = 0;  // Not handling preprocessor directives
-  var preprocessorState_directive = 1;  // Parsing a preprocessor directive
-  var preprocessorState_macroBody = 2;  // Parsing a macro body
-  var preprocessorState_postDirective = 3;  // Finished parsing a macro body, but macro is not yet stored
-  var preprocessorState_macroExpansion = 4;  // Expanding a macro call
-  var preprocessorState_skipping = 5;  // Skipping to #else/#endif
 
   // This function is used to raise exceptions on parse errors. It
   // takes either a `{line, column}` object or an offset integer (into
@@ -750,6 +730,7 @@
     tokComments = null;
     tokSpaces = null;
     skipSpace();
+    firstTokenOnLine = true;
   }
 
   // Called at the end of every token. Sets `tokEnd`, `tokVal`,
@@ -764,12 +745,6 @@
     tokType = type;
     tokVal = val;
     tokRegexpAllowed = type.beforeExpr;
-    nextToken();
-  }
-
-  // Advances to the next token, saving comments/spaces as belonging after the previous token.
-
-  function nextToken() {
     skipSpace();
     lastTokCommentsAfter = tokCommentsAfter;
     lastTokSpacesAfter = tokSpacesAfter;
@@ -790,8 +765,6 @@
         tokLineStart = match.index + match[0].length;
       }
     }
-    if (preprocessorState > preprocessorState_none)
-      return;
     if (options.onComment)
       options.onComment(true, input.slice(start + 2, end), start, tokPos,
                         startLoc, options.locations && new line_loc_t);
@@ -807,8 +780,6 @@
       ++tokPos;
       ch = input.charCodeAt(tokPos);
     }
-    if (preprocessorState > preprocessorState_none)
-      return;
     if (options.onComment)
       options.onComment(false, input.slice(start + 2, tokPos), start, tokPos,
                         startLoc, options.locations && new line_loc_t);
@@ -825,6 +796,7 @@
   function sourceSkipSpace() {
     tokComments = null;
     tokSpaces = null;
+    firstTokenOnLine = false;
     var spaceStart = tokPos,
         lastIsNewlinePos;
     for(;;) {
@@ -846,6 +818,7 @@
         }
         // Inform the preprocessor that we saw eol
         lastTokType = _eol;
+        firstTokenOnLine = true;
       } else if (ch === 10 || ch === 8232 || ch === 8233) {
         if (preprocessorState === preprocessorState_directive || preprocessorState === preprocessorState_macroBody)
           break;
@@ -857,6 +830,7 @@
         }
         // Inform the preprocessor that we saw eol
         lastTokType = _eol;
+        firstTokenOnLine = true;
       } else if (ch > 8 && ch < 14) {
         ++tokPos;
       } else if (ch === 47) { // '/'
@@ -1080,7 +1054,7 @@
         }
         if (preprocessorState === preprocessorState_none || preprocessorState === preprocessorState_postDirective) {
           // Preprocessor directives are only valid at the beginning of the line
-          if (lastTokType !== _eol)
+          if (!firstTokenOnLine)
             raise(--tokPos, "Preprocessor directives may only be used at the beginning of a line");
           return finishToken(_preprocess);
         }
@@ -1349,6 +1323,32 @@
 
   // ## Preprocessor
 
+  // We need to keep track of what state the preprocessor is in.
+
+  var preprocessorState;
+  var preprocessorState_none = 0;  // Not handling preprocessor directives
+  var preprocessorState_directive = 1;  // Parsing a preprocessor directive
+  var preprocessorState_macroBody = 2;  // Parsing a macro body
+  var preprocessorState_postDirective = 3;  // Finished parsing a macro body, but macro is not yet stored
+  var preprocessorState_macroExpansion = 4;  // Expanding a macro call
+  var preprocessorState_skipping = 5;  // Skipping to #else/#endif
+
+  // When expanding a macro, the tokens are stored in this array.
+  // It is switched to point to macro arguments and macro body token streams
+  // at various points during expansion.
+
+  var tokenStream;
+
+  // When reading from a token stream, this index points to the next
+  // token that will be returned from the current token stream.
+
+  var tokenStreamIndex;
+
+  // Preprocessor directives may only occur as the first token on a line.
+  // We use this to track whether the next token is the first on the line.
+
+  var firstTokenOnLine;
+
   // When a macro is expanded, this stack stores state information.
 
   var macroStack;
@@ -1397,6 +1397,7 @@
     tokType = t.type;
     tokVal = t.value;
     tokRegexpAllowed = t.regexpAllowed;
+    firstTokenOnLine = t.firstTokenOnLine;
     if (options.locations) {
       tokStartLoc = t.startLoc;
       tokEndLoc = t.endLoc;
@@ -1447,7 +1448,6 @@
         readToken = sourceReadToken;
         skipSpace = sourceSkipSpace;
         setStrict = sourceSetStrict;
-        nextToken();
       }
     }
     else
@@ -1545,11 +1545,6 @@
   }
 
   function parsePreprocess() { // '#'
-    // If comments/spaces are being tracked, save the state so the next non-preprocess token
-    // can capture comments/spaces that came before this token.
-    var stateBeforeDirective;
-    if (options.trackComments || options.trackSpaces)
-      stateBeforeDirective = makeToken();
     next();
     preprocessorState = preprocessorState_directive;
     var checkForMacro = false;
@@ -1655,30 +1650,15 @@
 
     preprocessorState = preprocessorState_none;
 
-    if (options.trackComments) {
-      // If there are comments after the directive, coalesce them with the ones before
-      if (stateBeforeDirective.commentsBefore !== null) {
-        Array.prototype.unshift.apply(tokCommentsBefore || (tokCommentsBefore = []), stateBeforeDirective.commentsBefore);
-        Array.prototype.unshift.apply(lastTokCommentsAfter || (lastTokCommentsAfter = []), stateBeforeDirective.lastCommentsAfter);
-      } else {
-        tokCommentsBefore = stateBeforeDirective.commentsBefore;
-        lastTokCommentsAfter = stateBeforeDirective.lastCommentsAfter;
-      }
-      tokComments = stateBeforeDirective.comments;
-      tokCommentsAfter = stateBeforeDirective.commentsAfter;
-    }
-    if (options.trackSpaces) {
-      // If there are spaces after the directive, coalesce them with the ones before
-      if (stateBeforeDirective.spacesBefore !== null) {
-        Array.prototype.unshift.apply(tokSpacesBefore || (tokSpacesBefore = []), stateBeforeDirective.spacesBefore);
-        Array.prototype.unshift.apply(lastTokSpacesAfter || (lastTokSpacesAfter = []), stateBeforeDirective.lastSpacesAfter);
-      } else {
-        tokSpacesBefore = stateBeforeDirective.spacesBefore;
-        lastTokSpacesAfter = stateBeforeDirective.lastSpacesAfter;
-      }
-      tokSpaces = stateBeforeDirective.spaces;
-      tokSpacesAfter = stateBeforeDirective.spacesAfter;
-    }
+    // Preprocessor directives are basically unfinished null nodes. To ensure the next node gets
+    // the comments from the last real node, we set tokCommentsBefore to the commentsAfter from
+    // the lastFinishedNode.
+    if (options.trackComments && lastFinishedNode !== undefined)
+      tokCommentsBefore = lastFinishedNode.commentsAfter;
+
+    // Same as above, but for spaces
+    if (options.trackSpaces && lastFinishedNode !== undefined)
+        tokSpacesBefore = lastFinishedNode.spacesAfter;
 
     if (checkForMacro && tokType === _name) {
       // If the current token at this point is a name, it could be a macro because macro names
@@ -1875,7 +1855,7 @@
       --tokenStreamIndex;
     }
     if (isMacroCall)
-      expandMacroBody(macro, args, expandedTokens);
+      expandMacroBody(macro, nameToken, args, expandedTokens);
     preprocessorState = savedState;
     popMacro(context);
     if (context === undefined) {
@@ -2035,7 +2015,7 @@
     return token;
   }
 
-  function expandMacroBody(macro, args, expandedTokens) {
+  function expandMacroBody(macro, nameToken, args, expandedTokens) {
     // Expansion requires two passes. The first pass does argument substitution.
     var bodyTokens = [];
     if (macro.parameters.length > 0 || macro.isVariadic)
@@ -2044,22 +2024,29 @@
       // If the macro has no parameters, we can just iterate through its tokens.
       bodyTokens = macro.tokens;
     // Second pass: expand macro calls.
-    for (var i = 0; i < bodyTokens.length; ++i) {
-      var token = bodyTokens[i];
-      if (token.type === _name) {
-        var nestedMacro;
-        if ((nestedMacro = lookupMacro(token.value)) !== undefined) {
-          // tokenIndex: i + 1 because the index points to the macro name, we want to start parsing after that
-          var context = {
-            tokens: bodyTokens,
-            tokenIndex: i + 1
-          };
-          if (expandMacro(nestedMacro, expandedTokens, context))
-            i = context.tokenIndex;
-          continue;
+    if (bodyTokens.length !== 0) {
+      // The first token of the body needs to get the comments before the macro name
+      if (options.trackComments)
+        bodyTokens[0].commentsBefore = nameToken.commentsBefore;
+      if (options.trackSpaces)
+        bodyTokens[0].spacesBefore = nameToken.spacesBefore;
+      for (var i = 0; i < bodyTokens.length; ++i) {
+        var token = bodyTokens[i];
+        if (token.type === _name) {
+          var nestedMacro;
+          if ((nestedMacro = lookupMacro(token.value)) !== undefined) {
+            // tokenIndex: i + 1 because the index points to the macro name, we want to start parsing after that
+            var context = {
+              tokens: bodyTokens,
+              tokenIndex: i + 1
+            };
+            if (expandMacro(nestedMacro, expandedTokens, context))
+              i = context.tokenIndex;
+            continue;
+          }
         }
+        expandedTokens.push(token);
       }
-      expandedTokens.push(token);
     }
   }
 
@@ -2088,10 +2075,24 @@
           continue;
         }
         if (lookupMacroParameter(macro, token)) {
+          var argTokens;
           if (token.type === _name)
-            Array.prototype.push.apply(bodyTokens, expandMacroArgument(args[token.macroParameter.index]));
+            argTokens = expandMacroArgument(args[token.macroParameter.index]);
           else
-            bodyTokens.push(stringifyMacroArgument(args[token.macroParameter.index]));
+            argTokens = [stringifyMacroArgument(args[token.macroParameter.index])];
+          if (argTokens.length !== 0) {
+            // Add the arg token's comments/spaces before/after
+            // to the first/last tokens of the expanded result.
+            if (options.trackComments) {
+              argTokens[0].commentsBefore = token.commentsBefore;
+              argTokens[argTokens.length - 1].commentsAfter = token.commentsAfter;
+            }
+            if (options.trackSpaces) {
+              argTokens[0].spacesBefore = token.spacesBefore;
+              argTokens[argTokens.length - 1].spacesAfter = token.spacesAfter;
+            }
+            Array.prototype.push.apply(bodyTokens, argTokens);
+          }
           continue;
         }
       }
