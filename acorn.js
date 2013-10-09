@@ -2242,17 +2242,11 @@
     var context = {
       input: input,
       inputLen: inputLen,
-      tokInput: tokInput,
-      tokCurLine: tokCurLine,
-      tokPos: tokPos,
-      tokLineStart: tokLineStart,
-      tokRegexpAllowed: tokRegexpAllowed,
-      tokComments: tokComments,
-      tokSpaces: tokSpaces,
       readToken: readToken,
       skipSpace: skipSpace,
       setStrict: setStrict
     };
+    var currentToken = makeToken();
     readToken = sourceReadToken;
     skipSpace = sourceSkipSpace;
     setStrict = sourceSetStrict;
@@ -2272,16 +2266,10 @@
     }
     input = context.input;
     inputLen = context.inputLen;
-    tokInput = context.tokInput;
-    tokCurLine = context.tokCurLine;
-    tokPos = context.tokPos;
-    tokLineStart = context.tokLineStart;
-    tokRegexpAllowed = context.tokRegexpAllowed;
-    tokComments = context.tokComments;
-    tokSpaces = context.tokSpaces;
     readToken = context.readToken;
     skipSpace = context.skipSpace;
     setStrict = context.setStrict;
+    setToken(currentToken);
     return token;
   }
 
