@@ -925,7 +925,16 @@
 
   function readToken_plus_min(code) { // '+-'
     var next = input.charCodeAt(tokPos + 1);
-    if (next === code) return finishOp(_incdec, 2);
+    if (next === code) {
+      if (next == 45 && input.charCodeAt(tokPos + 2) == 62 && lastEnd < tokLineStart) {
+        // A `-->` line comment
+        tokPos += 3;
+        skipLineComment();
+        skipSpace();
+        return readToken();
+      }
+      return finishOp(_incdec, 2);
+    }
     if (next === 61) return finishOp(_assign, 2);
     return finishOp(_plusmin, 1);
   }
@@ -946,6 +955,14 @@
       size = code === 62 && input.charCodeAt(tokPos+2) === 62 ? 3 : 2;
       if (input.charCodeAt(tokPos + size) === 61) return finishOp(_assign, size + 1);
       return finishOp(_bin8, size);
+    }
+    if (next == 33 && code == 60 && input.charCodeAt(tokPos + 2) == 45 &&
+        input.charCodeAt(tokPos + 3) == 45) {
+      // `<!--`, an XML-style comment that should be interpreted as a line comment
+      tokPos += 4;
+      skipLineComment();
+      skipSpace();
+      return readToken();
     }
     if (next === 61)
       size = input.charCodeAt(tokPos+2) === 61 ? 3 : 2;
@@ -3166,8 +3183,8 @@
         node.operator = tokVal;
         next();
         node.right = parseExprOp(parseMaybeUnary(), prec, noIn);
-        var node = finishNode(node, /&&|\|\|/.test(node.operator) ? "LogicalExpression" : "BinaryExpression");
-        return parseExprOp(node, minPrec, noIn);
+        var exprNode = finishNode(node, /&&|\|\|/.test(node.operator) ? "LogicalExpression" : "BinaryExpression");
+        return parseExprOp(exprNode, minPrec, noIn);
       }
     }
     return left;
