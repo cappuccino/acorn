@@ -726,6 +726,9 @@
     tokPos = tokLineStart = 0;
     tokRegexpAllowed = true;
     tokComments = null;
+    tokCommentsBefore = null;
+    tokCommentsAfter = null;
+    lastTokCommentsAfter = null;
     tokSpaces = null;
     skipSpace();
     firstTokenOnLine = true;
@@ -1380,12 +1383,18 @@
 
   var preprocessorGetToken;
 
+  // We use these to track orphaned comments/spaces that occur before/after preprocessor directives.
+
+  var orphanedComments, orphanedSpaces;
+
   function initPreprocessor(inpt, opts) {
     macros = Object.create(null);
     macroStack = [];
     macroTokens = [];
     tokenStream = macroTokens;
     tokenStreamIndex = 0;
+    orphanedComments = null;
+    orphanedSpaces = null;
     preprocessorState = preprocessorState_none;
     preprocessorGetToken = exports.tokenize(inpt, opts);
     addPredefinedMacros();
@@ -1565,6 +1574,30 @@
   }
 
   function parsePreprocess() { // '#'
+    /*
+      If there are lastTokCommentsAfter at this point, it means one of two things:
+
+      1. There was a statement before this preprocessor directive in the same block,
+         and lastTokCommentsAfter belong to that statement's node.
+      2. There was no statement before this directive.
+
+      In the case of #2, the comments have to be accumulated so they can be attached
+      to the next node that comes along.
+    */
+    if (lastTokCommentsAfter !== null) {
+      if (orphanedComments === null && (lastFinishedNode === undefined || lastFinishedNode.commentsAfter === undefined))
+        Array.prototype.push.apply(orphanedComments = [], lastTokCommentsAfter);
+    }
+    else
+      orphanedComments = null;
+
+    // Same as above, but for spaces
+    if (lastTokSpacesAfter !== null) {
+      if (orphanedSpaces === null && (lastFinishedNode === undefined || lastFinishedNode.spacesAfter === undefined))
+        Array.prototype.push.apply(orphanedSpaces = [], lastTokSpacesAfter);
+    }
+    else
+      orphanedSpaces = null;
     next();
     preprocessorState = preprocessorState_directive;
     var checkForMacro = false;
@@ -1670,15 +1703,59 @@
 
     preprocessorState = preprocessorState_none;
 
-    // Preprocessor directives are basically unfinished null nodes. To ensure the next node gets
-    // the comments from the last real node, we set tokCommentsBefore to the commentsAfter from
-    // the lastFinishedNode.
-    if (options.trackComments && lastFinishedNode !== undefined)
-      tokCommentsBefore = lastFinishedNode.commentsAfter;
+    if (options.trackComments) {
+      /*
+        If there are orphaned comments, there are a few states we could be in:
+
+        1. tokCommentsBefore !== null, which means there is another orphan comment,
+           so append it to the orphans.
+        2. The lastFinishedNode has no commentsAfter, which means there are no more
+           orphans to accumulate, and they will be attached to the next node.
+        3. The last finished node has commentsAfter, which means the orphanedComments
+           actually belong to that previous node.
+      */
+      if (orphanedComments !== null) {
+        if (tokCommentsBefore !== null)
+          Array.prototype.push.apply(orphanedComments, tokCommentsBefore);
+        if (lastFinishedNode === undefined || lastFinishedNode.commentsAfter === undefined)
+          tokCommentsBefore = orphanedComments;
+        else {
+          Array.prototype.push.apply(lastFinishedNode.commentsAfter, orphanedComments);
+          tokCommentsBefore = lastFinishedNode.commentsAfter;
+        }
+      }
+      /*
+        If there are no orphaned comments and there is a lastFinishedNode:
+
+        If there were comments after the preprocessor directive,
+        then append those comments to the lastFinishedNode's commentsAfter.
+
+        Then set tokCommentsBefore to the lastFinishedNode's commentsAfter, so that
+        the next node will pick them up as commentsBefore.
+      */
+      else if (lastFinishedNode !== undefined) {
+        if (tokCommentsBefore !== null)
+          Array.prototype.push.apply(lastFinishedNode.commentsAfter || (lastFinishedNode.commentsAfter = []), tokCommentsBefore);
+        tokCommentsBefore = lastFinishedNode.commentsAfter;
+      }
+    }
 
     // Same as above, but for spaces
-    if (options.trackSpaces && lastFinishedNode !== undefined)
+    if (orphanedSpaces !== null) {
+      if (tokSpacesBefore !== null)
+        Array.prototype.push.apply(orphanedSpaces, tokSpacesBefore);
+      if (lastFinishedNode === undefined || lastFinishedNode.spacesAfter === undefined)
+        tokSpacesBefore = orphanedSpaces;
+      else {
+        Array.prototype.push.apply(lastFinishedNode.spacesAfter, orphanedSpaces);
         tokSpacesBefore = lastFinishedNode.spacesAfter;
+      }
+    }
+    else if (lastFinishedNode !== undefined) {
+      if (tokSpacesBefore !== null)
+        Array.prototype.push.apply(lastFinishedNode.spacesAfter || (lastFinishedNode.spacesAfter = []), tokSpacesBefore);
+      tokSpacesBefore = lastFinishedNode.spacesAfter;
+    }
 
     if (checkForMacro && tokType === _name) {
       // If the current token at this point is a name, it could be a macro because macro names
