@@ -28614,7 +28614,7 @@ test("objj = __OBJJ__;\n", {
       "expression": {
         "type": "AssignmentExpression",
         "start": 0,
-        "end": 2,
+        "end": 10,
         "operator": "=",
         "left": {
           "type": "Identifier",
@@ -28624,8 +28624,8 @@ test("objj = __OBJJ__;\n", {
         },
         "right": {
           "type": "Literal",
-          "start": 0,
-          "end": 2,
+          "start": 9,
+          "end": 10,
           "value": 1,
           "raw": "1"
         }

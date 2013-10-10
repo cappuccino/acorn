@@ -8,7 +8,8 @@ var infile, parsed, options = {}, silent = false, compact = false;
 
 function help(status) {
   console.log("usage: " + path.basename(process.argv[1]) + " infile [--ecma3|--ecma5] [--strictSemicolons] [--trackComments] [--trackSpaces]");
-  console.log("        [--locations] [--no-objj] [--no-preprocess] [--compact] [--silent] [--help]");
+  console.log("        [--locations] [-Dmacro[([param, ...])][=definition]] [--no-objj] [--no-preprocess]");
+  console.log("        [--compact] [--silent] [--help]");
   process.exit(status);
 }
 
@@ -20,6 +21,7 @@ for (var i = 2; i < process.argv.length; ++i) {
   else if (arg == "--trackComments") options.trackComments = true;
   else if (arg == "--trackSpaces") options.trackSpaces = true;
   else if (arg == "--locations") options.locations = true;
+  else if (arg.slice(0, 2) == "-D") (options.macros || (options.macros = [])).push(arg.slice(2));
   else if (arg == "--no-preprocess") options.preprocess = false;
   else if (arg == "--no-objj") options.objj = false;
   else if (arg == "--silent") silent = true;

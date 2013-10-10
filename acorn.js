@@ -135,19 +135,13 @@
     sourceFile: null,
     // Turn on objj to allow Objective-J syntax
     objj: true,
-    // Turn on preprocess to allow C preprocess derectives.
-    // #define macro1
-    // #define macro2 console.log("Hello")
-    // #define macro3(x,y,z) if (x > y && y > z) console.log("Touchdown!!!")
-    // #if macro1
-    // #else
-    // #endif
+    // Turn on the preprocessor.
     preprocess: true,
-    addMacro: defaultAddMacro,
-    getMacro: defaultGetMacro,
-    undefineMacro: defaultUndefineMacro,
-    isMacro: defaultIsMacro,
-
+    // An array of macro definitions may be passed in. Definitions may be
+    // in one of two forms:
+    //    macro
+    //    macro=body
+    macros: [],
     // Turn off lineNoInErrorMessage to exclude line number in error messages
     // Needs to be on to run test cases
     lineNoInErrorMessage: true
@@ -164,7 +158,7 @@
 
   var macros;
 
-  function defaultAddMacro(macro) {
+  function addMacro(macro) {
     var old = macros[macro.identifier];
     if (old !== undefined) {
       // GCC preprocessor docs section 3.8 say that macros are effectively the same if:
@@ -208,15 +202,15 @@
     macros[macro.identifier] = macro;
   }
 
-  function defaultGetMacro(name) {
+  function getMacro(name) {
     return macros[name];
   }
 
-  function defaultUndefineMacro(name) {
+  function undefineMacro(name) {
     delete macros[name];
   }
 
-  function defaultIsMacro(name) {
+  function isMacro(name) {
     return macros[name] !== undefined;
   }
 
@@ -1328,7 +1322,7 @@
           return finishToken(keywordTypesPreprocessor[word], word);
         else {
           var macro;
-          if ((macro = options.getMacro(word)) !== undefined)
+          if ((macro = getMacro(word)) !== undefined)
             return expandMacro(macro, tokenStream);
         }
       }
@@ -1387,6 +1381,10 @@
 
   var orphanedComments, orphanedSpaces;
 
+  // Definitions for predefined macros.
+
+  var predefinedMacros = {"__OBJJ__": function() { return options.objj ? "1" : undefined}};
+
   function initPreprocessor(inpt, opts) {
     macros = Object.create(null);
     macroStack = [];
@@ -1398,22 +1396,68 @@
     preprocessorState = preprocessorState_none;
     preprocessorGetToken = exports.tokenize(inpt, opts);
     addPredefinedMacros();
+    defineMacros(options.macros, false);
   }
 
   function addPredefinedMacros() {
-    if (options.objj) {
-      var token = {
-        input: "1",
-        start: 0,
-        end: 2,
-        pos: 2,
-        type: _num,
-        value: 1,
-        regexpAllowed: false
-      };
-      var macro = new Macro("__OBJJ__", [], Object.create(null), false, false, [token]);
-      options.addMacro(macro);
+    var names = Object.keys(predefinedMacros);
+    var definitions = [];
+    for (var i = 0; i < names.length; ++i) {
+      var name = names[i];
+      var definition = predefinedMacros[name];
+      if (definition) {
+        if (typeof(definition) === "function") {
+          definition = definition();
+          if (definition === undefined)
+            continue;
+        }
+        definitions.push(name + "=" + definition);
+      }
+      else
+        definitions.push(name);
     }
+    defineMacros(definitions, true);
+  }
+
+  /*
+    Defines a macro from text in one of two formats:
+
+    macro
+    macro=body
+
+    In the first case, the macro is defined with the value 1.
+    In the second case, it must pass the normal parsing rules for macros.
+  */
+  function defineMacros(definitions, predefined) {
+    if (definitions.length === 0)
+      return;
+    var savedInput = input;
+    for (var i = 0; i < definitions.length; ++i) {
+      var definition = definitions[i].trim();
+      var pos = definition.indexOf("=");
+      if (pos === 0)
+        raise(0, "Invalid macro definition: '" + definition + "'");
+      // If there is no macro body, define the name with the value 1
+      var name, body;
+      if (pos > 0) {
+        name = definition.slice(0, pos);
+        body = definition.slice(pos + 1);
+      } else {
+        name = definition;
+        body = "1";
+      }
+      if (!predefined && predefinedMacros.hasOwnProperty(name))
+        raise(0, "'" + name + "' is a predefined macro name");
+      // Construct a definition that parseDefine can digest
+      input = name + " " + body;
+      inputLen = input.length;
+      initTokenState();
+      preprocessorState = preprocessorState_none;
+      parseDefine();
+    }
+    input = savedInput;
+    inputLen = input.length;
+    preprocessorState = preprocessorState_none;
   }
 
   function setToken(t) {
@@ -1570,7 +1614,7 @@
       else if (tokens[tokens.length - 1].type === _preTokenPaste)
         raise(tokens[tokens.length - 1].start, "## may not be at the end of a macro");
     }
-    options.addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, tokens));
+    addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, tokens));
   }
 
   function parsePreprocess() { // '#'
@@ -1611,7 +1655,7 @@
         next();
         var name = tokVal;
         expect(_name, "Expected a name after #undef");
-        options.undefineMacro(name);
+        undefineMacro(name);
         eat(_eol);
         checkForMacro = true;
         break;
@@ -1636,7 +1680,7 @@
           preIfLevel++;
           preprocessReadToken();
           var ident = preprocessGetIdent();
-          var test = options.getMacro(ident);
+          var test = getMacro(ident);
           if (!test) {
             preNotSkipping = false
             preprocessSkipToElseOrEndif();
@@ -1652,7 +1696,7 @@
           preIfLevel++;
           preprocessReadToken();
           var ident = preprocessGetIdent();
-          var test = options.getMacro(ident);
+          var test = getMacro(ident);
           if (test) {
             preNotSkipping = false
             preprocessSkipToElseOrEndif();
@@ -1762,7 +1806,7 @@
       // are not looked up during macro definition. We have to wait until now to expand the macro
       // to ensure it is defined and that comments/spaces before it are handled correctly.
       var macro;
-      if ((macro = options.getMacro(tokVal)) !== undefined)
+      if ((macro = getMacro(tokVal)) !== undefined)
         expandMacro(macro, tokenStream);
     }
   }
@@ -1815,11 +1859,11 @@
       },
       Identifier: function(node, st, c) {
         var name = node.name,
-            macro = options.getMacro(name);
+            macro = getMacro(name);
         return (macro && parseInt(macro.macro)) || 0;
       },
       DefinedExpression: function(node, st, c) {
-        return !!options.getMacro(node.id.name);
+        return !!getMacro(node.id.name);
       }
     }, {});
   }
@@ -2313,7 +2357,7 @@
 
   function lookupMacro(name, isArg) {
     var macro;
-    macro = options.getMacro(name);
+    macro = getMacro(name);
     // Comparing isArg !== true is faster than !isArg, because testing a non-boolean
     // for falseness is very slow.
     if (macro !== undefined && isArg !== true && isMacroSelfReference(macro))
