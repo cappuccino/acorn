@@ -1258,9 +1258,11 @@
     var type = _name;
     if (!containsEsc) {
       if (options.preprocess && preprocessorState === preprocessorState_none) {
-        if (tokType === _preprocess && isKeywordPreprocessor(word))
+        if (tokType === _preprocess && isKeywordPreprocessor(word)) {
+          preprocessorState = preprocessorState_directive;
           return finishToken(keywordTypesPreprocessor[word], word);
-        else {
+        }
+        else if (!preSkipping) {
           var macro;
           if ((macro = getMacro(word)) !== undefined)
             return expandMacro(macro, tokenStream);
@@ -1286,7 +1288,6 @@
   var preprocessorState_macroBody = 2;  // Parsing a macro body
   var preprocessorState_postDirective = 3;  // Finished parsing a macro body, but macro is not yet stored
   var preprocessorState_macroExpansion = 4;  // Expanding a macro call
-  var preprocessorState_skipping = 5;  // Skipping to #else/#endif
 
   // When expanding a macro, the tokens are stored in this array.
   // It is switched to point to macro arguments and macro body token streams
@@ -1329,6 +1330,23 @@
 
   var macros;
 
+  // Used to track the nesting of #if/#ifdef/#ifndef directives. Each element stores state info:
+  //    pos: position of # in the #if, for error reporting if an unbalanced #else/#endif is found
+  //    state: preIf or preElse
+  //    skipping: true if the #if expression evaluated to false
+
+  var preIfStack;
+
+  // When skipping to #else/#endif, we set this flag.
+
+  var preSkipping;
+
+  // The state of an #if. When an #if is waiting for an #else or #endif, it is preIf.
+  // When there was an #else, it's preElse.
+
+  var preIf = 0;
+  var preElse = 1;
+
   // A macro object. Note that a macro can have no parameters but still
   // be a function macro if it is defined with an empty parameter list.
 
@@ -1360,6 +1378,8 @@
     tokenStreamIndex = 0;
     orphanedComments = null;
     orphanedSpaces = null;
+    preIfStack = [];
+    preSkipping = false;
     preprocessorState = preprocessorState_none;
     preprocessorGetToken = exports.tokenize(inpt, opts);
     addPredefinedMacros();
@@ -1535,9 +1555,9 @@
 
   function parseDefine() {
     next();
+    expect(_name, "Expected a name after #define");
     var macroIdentifierEnd = tokEnd;
     var name = tokVal;
-    expect(_name, "Expected a name after #define");
     if (name === "__VA_ARGS__")
       raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
 
@@ -1618,6 +1638,7 @@
   }
 
   function parsePreprocess() { // '#'
+    var wasSkipping = preSkipping;
     /*
       If there are lastTokCommentsAfter at this point, it means one of two things:
 
@@ -1642,36 +1663,48 @@
     }
     else
       orphanedSpaces = null;
+    var directivePos = tokStart;
     next();
     preprocessorState = preprocessorState_directive;
-    var checkForMacro = false;
-    switch (tokType) {
+    var checkForMacro = true;
+    var directive = tokType;
+    switch (directive) {
       case _preDefine:
-        parseDefine();
-        checkForMacro = true;
+        if (preSkipping)
+          skipToNextPreDirective();
+        else {
+          parseDefine();
+          checkForMacro = true;
+        }
         break;
 
       case _preUndef:
-        next();
-        var name = tokVal;
-        expect(_name, "Expected a name after #undef");
-        undefineMacro(name);
-        eat(_eol);
-        checkForMacro = true;
+        if (preSkipping)
+          skipToNextPreDirective();
+        else {
+          next();
+          expect(_name, "Expected a name after #undef");
+          var name = tokVal;
+          undefineMacro(name);
+          eat(_eol);
+          checkForMacro = true;
+        }
         break;
 
       case _preIf:
-        if (preNotSkipping) {
-          preIfLevel++;
-          preprocessReadToken();
-          var expr = preprocessParseExpression();
+        var state = {pos: directivePos, state: preIf, skipping: false};
+        preIfStack.push(state);
+        next();
+        if (preSkipping)
+          skipToNextPreDirective();
+        else {
+          var expr = parseExpression();
+          expect(_eol, "#if expressions must be followed by the token EOL");
           var test = preprocessEvalExpression(expr);
           if (!test) {
-            preNotSkipping = false;
-            preprocessSkipToElseOrEndif();
+            state.skipping = true;
+            skipToNextPreDirective();
           }
-        } else {
-          finishToken(_preIf);
         }
         break;
 
@@ -1722,15 +1755,18 @@
         break;
 
       case _preEndif:
-        if (preIfLevel) {
-          if (preNotSkipping) {
-            preIfLevel--;
-            break;
-          }
-        } else {
-          raise(preTokStart, "#endif without #if");
+        next();
+        expect(_eol, "#endif must be followed by the token EOL");
+        if (preIfStack.length > 0) {
+          preIfStack.pop();
+          // If this ended a nested #if, we resume the skipping state
+          // of the next #if up the stack.
+          preSkipping = preIfStack.length > 0 ? preIfStack[preIfStack.length - 1].skipping : false;
+          if (preSkipping)
+            skipToNextPreDirective();
         }
-        finishToken(_preEndif);
+        else
+          raise(tokStart, "#endif without matching #if");
         break;
 
       case _prePragma:
@@ -1769,7 +1805,7 @@
         }
       }
       /*
-        If there are no orphaned comments and there is a lastFinishedNode:
+        If we were not skipping and there are no orphaned comments and there is a lastFinishedNode:
 
         If there were comments after the preprocessor directive,
         then append those comments to the lastFinishedNode's commentsAfter.
@@ -1777,7 +1813,7 @@
         Then set tokCommentsBefore to the lastFinishedNode's commentsAfter, so that
         the next node will pick them up as commentsBefore.
       */
-      else if (lastFinishedNode !== undefined) {
+      else if (!wasSkipping && lastFinishedNode !== undefined) {
         if (tokCommentsBefore !== null)
           Array.prototype.push.apply(lastFinishedNode.commentsAfter || (lastFinishedNode.commentsAfter = []), tokCommentsBefore);
         tokCommentsBefore = lastFinishedNode.commentsAfter;
@@ -1785,20 +1821,22 @@
     }
 
     // Same as above, but for spaces
-    if (orphanedSpaces !== null) {
-      if (tokSpacesBefore !== null)
-        Array.prototype.push.apply(orphanedSpaces, tokSpacesBefore);
-      if (lastFinishedNode === undefined || lastFinishedNode.spacesAfter === undefined)
-        tokSpacesBefore = orphanedSpaces;
-      else {
-        Array.prototype.push.apply(lastFinishedNode.spacesAfter, orphanedSpaces);
+    if (options.trackSpaces) {
+      if (orphanedSpaces !== null) {
+        if (tokSpacesBefore !== null)
+          Array.prototype.push.apply(orphanedSpaces, tokSpacesBefore);
+        if (lastFinishedNode === undefined || lastFinishedNode.spacesAfter === undefined)
+          tokSpacesBefore = orphanedSpaces;
+        else {
+          Array.prototype.push.apply(lastFinishedNode.spacesAfter, orphanedSpaces);
+          tokSpacesBefore = lastFinishedNode.spacesAfter;
+        }
+      }
+      else if (lastFinishedNode !== undefined) {
+        if (tokSpacesBefore !== null)
+          Array.prototype.push.apply(lastFinishedNode.spacesAfter || (lastFinishedNode.spacesAfter = []), tokSpacesBefore);
         tokSpacesBefore = lastFinishedNode.spacesAfter;
       }
-    }
-    else if (lastFinishedNode !== undefined) {
-      if (tokSpacesBefore !== null)
-        Array.prototype.push.apply(lastFinishedNode.spacesAfter || (lastFinishedNode.spacesAfter = []), tokSpacesBefore);
-      tokSpacesBefore = lastFinishedNode.spacesAfter;
     }
 
     if (checkForMacro && tokType === _name) {
@@ -1808,6 +1846,20 @@
       var macro;
       if ((macro = getMacro(tokVal)) !== undefined)
         expandMacro(macro, tokenStream);
+    }
+  }
+
+  function skipToNextPreDirective() {
+    preSkipping = true;
+    for (;;) {
+      switch (tokType) {
+        case _preprocess:
+          return;
+
+        case _eof:
+          raise(preIfStack[0].pos, "Unterminated #if at EOF");
+      }
+      readToken();
     }
   }
 
@@ -1860,7 +1912,7 @@
       Identifier: function(node, st, c) {
         var name = node.name,
             macro = getMacro(name);
-        return (macro && parseInt(macro.macro)) || 0;
+        return (macro !== undefined && parseInt(macro.macro)) || 0;
       },
       DefinedExpression: function(node, st, c) {
         return !!getMacro(node.id.name);
@@ -3018,7 +3070,7 @@
         return finishNode(node, "ExpressionStatement");
       }
     }
-    while (tokType !== terminator);
+    while (tokType !== _eof && tokType !== terminator);
 
     return null;
   }
