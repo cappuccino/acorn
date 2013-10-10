@@ -163,10 +163,10 @@ x = stringify(   foo  =
 #define xstr(s) str(s)
 #define str(s) #s
 #define foo 4
-str (foo);
-// "foo";
-xstr (foo);
-// "4";
+x = str (foo);
+// x = "foo";
+x = xstr (foo);
+// x = "4";
 
 // Empty arg becomes empty string
 #define stringify2(arg1, arg2)  #arg2
@@ -186,9 +186,9 @@ x = concatenate(foo, bar);
 x = concatenate(foo, );
 // x = 4 + foo7;
 
-// Only the leading and trailing tokens are pasted
+// Only the leading and trailing tokens in an argument are pasted
 x = concatenate(foo + 1, 7 + foo);
-// x = 4 + 1 + 17 + foo7;
+// x = 4 + 1 + 4 + 17 + foo7;
 
 #define COMMAND(NAME)  { name: #NAME, command: NAME ## _command }
 x = COMMAND(foo);
@@ -214,7 +214,7 @@ x = variadic(7);
 ignore_arg(, "foo", increment(7), 13);
 // someFunction("foo", 7 + 1, 13);
 
-// Using both named and variadic parameters
+// Both named and variadic parameters may be used together
 #define debuglog(format, ...)  if (debugging) console.log(format, __VA_ARGS__)
 debuglog("%s: (%d, %d)", "foo", 13.27, 31.7);
 // if (debugging)
