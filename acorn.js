@@ -154,66 +154,6 @@
     sourceFile = options.sourceFile || null;
   }
 
-  // Contains a hash of macro names to Macro objects.
-
-  var macros;
-
-  function addMacro(macro) {
-    var old = macros[macro.identifier];
-    if (old !== undefined) {
-      // GCC preprocessor docs section 3.8 say that macros are effectively the same if:
-      // - Both are the same type (object/function)
-      // - All of the tokens are the same
-      // - Parameters (if any) are the same
-      var same = true;
-      if (old.isFunction === macro.isFunction &&
-          old.isVariadic === macro.isVariadic &&
-          old.parameters.length === macro.parameters.length &&
-          old.tokens.length === macro.tokens.length)
-      {
-        // Check parameters first if they are function macros
-        if (old.isFunction) {
-          for (var i = 0; i < old.parameters.length; ++i) {
-            if (old.parameters[i].type !== macro.parameters[i].type ||
-                old.parameters[i].value !== macro.parameters[i].value)
-            {
-              same = false;
-              break;
-            }
-          }
-        }
-        // Now check the body if necessary
-        if (same) {
-          for (var i = 0; i < old.tokens.length; ++i) {
-            if (old.tokens[i].type !== macro.tokens[i].type ||
-                old.tokens[i].value !== macro.tokens[i].value)
-            {
-              same = false;
-              break;
-            }
-          }
-        }
-      }
-      else
-        same = false;
-      if (!same)
-        console.warn("Warning: redefining the macro \"" + macro.identifier + "\"");
-    }
-    macros[macro.identifier] = macro;
-  }
-
-  function getMacro(name) {
-    return macros[name];
-  }
-
-  function undefineMacro(name) {
-    delete macros[name];
-  }
-
-  function isMacro(name) {
-    return macros[name] !== undefined;
-  }
-
   // The `getLineInfo` function is mostly useful when the
   // `locations` option is off (for performance reasons) and you
   // want to find the line/column position for a given character
@@ -1385,6 +1325,33 @@
 
   var predefinedMacros = {"__OBJJ__": function() { return options.objj ? "1" : undefined}};
 
+  // Contains a hash of macro names to Macro objects.
+
+  var macros;
+
+  // A macro object. Note that a macro can have no parameters but still
+  // be a function macro if it is defined with an empty parameter list.
+
+  var Macro = exports.Macro = function Macro(ident, parameters, parameterMap, isFunction, isVariadic, tokens) {
+    this.identifier = ident;
+    // Tell the parameter its index, so when we lookup a parameter by name, we know its positional index
+    for (var i = 0; i < parameters.length; ++i)
+      parameters[i].index = i;
+    this.parameters = parameters;
+    this.parameterMap = parameterMap;
+    this.isFunction = isFunction;
+    this.isVariadic = isVariadic;
+    this.tokens = tokens;
+  }
+
+  Macro.prototype.isParameter = function(identifier) {
+    return this.parameterMap[identifier] !== undefined;
+  }
+
+  Macro.prototype.getParameterByName = function(identifier) {
+    return this.parameterMap[identifier];
+  }
+
   function initPreprocessor(inpt, opts) {
     macros = Object.create(null);
     macroStack = [];
@@ -1460,6 +1427,62 @@
     preprocessorState = preprocessorState_none;
   }
 
+  function addMacro(macro) {
+    var old = macros[macro.identifier];
+    if (old !== undefined) {
+      // GCC preprocessor docs section 3.8 say that macros are effectively the same if:
+      // - Both are the same type (object/function)
+      // - All of the tokens are the same
+      // - Parameters (if any) are the same
+      var same = true;
+      if (old.isFunction === macro.isFunction &&
+          old.isVariadic === macro.isVariadic &&
+          old.parameters.length === macro.parameters.length &&
+          old.tokens.length === macro.tokens.length)
+      {
+        // Check parameters first if they are function macros
+        if (old.isFunction) {
+          for (var i = 0; i < old.parameters.length; ++i) {
+            if (old.parameters[i].type !== macro.parameters[i].type ||
+                old.parameters[i].value !== macro.parameters[i].value)
+            {
+              same = false;
+              break;
+            }
+          }
+        }
+        // Now check the body if necessary
+        if (same) {
+          for (var i = 0; i < old.tokens.length; ++i) {
+            if (old.tokens[i].type !== macro.tokens[i].type ||
+                old.tokens[i].value !== macro.tokens[i].value)
+            {
+              same = false;
+              break;
+            }
+          }
+        }
+      }
+      else
+        same = false;
+      if (!same)
+        console.warn("Warning: redefining the macro \"" + macro.identifier + "\"");
+    }
+    macros[macro.identifier] = macro;
+  }
+
+  function getMacro(name) {
+    return macros[name];
+  }
+
+  function undefineMacro(name) {
+    delete macros[name];
+  }
+
+  function isMacro(name) {
+    return macros[name] !== undefined;
+  }
+
   function setToken(t) {
     tokInput = t.input;
     tokStart = t.start;
@@ -1487,29 +1510,6 @@
       tokSpacesAfter = t.spacesAfter;
       lastTokSpacesAfter = t.lastSpacesAfter;
     }
-  }
-
-  // A macro object. Note that a macro can have no parameters but still
-  // be a function macro if it is defined with an empty parameter list.
-
-  var Macro = exports.Macro = function Macro(ident, parameters, parameterMap, isFunction, isVariadic, tokens) {
-    this.identifier = ident;
-    // Tell the parameter its index, so when we lookup a parameter by name, we know its positional index
-    for (var i = 0; i < parameters.length; ++i)
-      parameters[i].index = i;
-    this.parameters = parameters;
-    this.parameterMap = parameterMap;
-    this.isFunction = isFunction;
-    this.isVariadic = isVariadic;
-    this.tokens = tokens;
-  }
-
-  Macro.prototype.isParameter = function(identifier) {
-    return this.parameterMap[identifier] !== undefined;
-  }
-
-  Macro.prototype.getParameterByName = function(identifier) {
-    return this.parameterMap[identifier];
   }
 
   function streamReadToken() {
