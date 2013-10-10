@@ -1945,11 +1945,16 @@
         tokenAfterMacro = makeToken();
       }
     }
-    else if (args === null && tokType !== _eof) {
+    else if (args === null) {
       // If the macro has no args and is nested and we have not reached the end of
       // the token stream, the next() above pushed us past the token *after* the macro call,
       // which the caller will want to read again. So we back up one token in the stream.
-      --tokenStreamIndex;
+      if (tokType !== _eof)
+        --tokenStreamIndex;
+      else if (!isMacroCall)
+        // On the other hand, if we have reached eof and the macro is not being called,
+        // we have to append it as a name.
+        expandedTokens.push(nameToken);
     }
     if (isMacroCall)
       expandMacroBody(macro, nameToken, args, expandedTokens);
