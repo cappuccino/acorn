@@ -2514,357 +2514,358 @@
   // `if (foo) /blah/.exec(foo);`, where looking at the previous token
   // does not help.
 
-  function parseStatement() {
-    if (tokType === _slash || tokType === _assign && tokVal == "/=")
-      readToken(true);
+  function parseStatement(terminator) {
+    do {
+      if (tokType === _slash || tokType === _assign && tokVal == "/=")
+        readToken(true);
 
-    var starttype = tokType, node = startNode();
+      var starttype = tokType, node = startNode();
 
-    // This is a special case when trying figure out if this is a subscript to the former line or a new send message statement on this line...
-    if (nodeMessageSendObjectExpression) {
-        node.expression = parseMessageSendExpression(nodeMessageSendObjectExpression, nodeMessageSendObjectExpression.object);
-        semicolon();
-        return finishNode(node, "ExpressionStatement");
-    }
-
-    // Most types of statements are recognized by the keyword they
-    // start with. Many are trivial to parse, some require a bit of
-    // complexity.
-
-    switch (starttype) {
-    case _break: case _continue:
-      next();
-      var isBreak = starttype === _break;
-      if (eat(_semi) || canInsertSemicolon()) node.label = null;
-      else if (tokType !== _name) unexpected();
-      else {
-        node.label = parseIdent();
-        semicolon();
+      // This is a special case when trying figure out if this is a subscript to the former line or a new send message statement on this line...
+      if (nodeMessageSendObjectExpression) {
+          node.expression = parseMessageSendExpression(nodeMessageSendObjectExpression, nodeMessageSendObjectExpression.object);
+          semicolon();
+          return finishNode(node, "ExpressionStatement");
       }
 
-      // Verify that there is an actual destination to break or
-      // continue to.
-      for (var i = 0; i < labels.length; ++i) {
-        var lab = labels[i];
-        if (node.label == null || lab.name === node.label.name) {
-          if (lab.kind != null && (isBreak || lab.kind === "loop")) break;
-          if (node.label && isBreak) break;
-        }
-      }
-      if (i === labels.length) raise(node.start, "Unsyntactic " + starttype.keyword);
-      return finishNode(node, isBreak ? "BreakStatement" : "ContinueStatement");
+      // Most types of statements are recognized by the keyword they
+      // start with. Many are trivial to parse, some require a bit of
+      // complexity.
 
-    case _debugger:
-      next();
-      semicolon();
-      return finishNode(node, "DebuggerStatement");
-
-    case _do:
-      next();
-      labels.push(loopLabel);
-      node.body = parseStatement();
-      labels.pop();
-      expect(_while, "Expected 'while' at end of do statement");
-      node.test = parseParenExpression();
-      semicolon();
-      return finishNode(node, "DoWhileStatement");
-
-      // Disambiguating between a `for` and a `for`/`in` loop is
-      // non-trivial. Basically, we have to parse the init `var`
-      // statement or expression, disallowing the `in` operator (see
-      // the second parameter to `parseExpression`), and then check
-      // whether the next token is `in`. When there is no init part
-      // (semicolon immediately after the opening parenthesis), it is
-      // a regular `for` loop.
-
-    case _for:
-      next();
-      labels.push(loopLabel);
-      expect(_parenL, "Expected '(' after 'for'");
-      if (tokType === _semi) return parseFor(node, null);
-      if (tokType === _var) {
-        var init = startNode();
+      switch (starttype) {
+      case _break: case _continue:
         next();
-        parseVar(init, true);
-        finishNode(init, "VariableDeclaration");
-        if (init.declarations.length === 1 && eat(_in))
-          return parseForIn(node, init);
+        var isBreak = starttype === _break;
+        if (eat(_semi) || canInsertSemicolon()) node.label = null;
+        else if (tokType !== _name) unexpected();
+        else {
+          node.label = parseIdent();
+          semicolon();
+        }
+
+        // Verify that there is an actual destination to break or
+        // continue to.
+        for (var i = 0; i < labels.length; ++i) {
+          var lab = labels[i];
+          if (node.label == null || lab.name === node.label.name) {
+            if (lab.kind != null && (isBreak || lab.kind === "loop")) break;
+            if (node.label && isBreak) break;
+          }
+        }
+        if (i === labels.length) raise(node.start, "Unsyntactic " + starttype.keyword);
+        return finishNode(node, isBreak ? "BreakStatement" : "ContinueStatement");
+
+      case _debugger:
+        next();
+        semicolon();
+        return finishNode(node, "DebuggerStatement");
+
+      case _do:
+        next();
+        labels.push(loopLabel);
+        node.body = parseStatement();
+        labels.pop();
+        expect(_while, "Expected 'while' at end of do statement");
+        node.test = parseParenExpression();
+        semicolon();
+        return finishNode(node, "DoWhileStatement");
+
+        // Disambiguating between a `for` and a `for`/`in` loop is
+        // non-trivial. Basically, we have to parse the init `var`
+        // statement or expression, disallowing the `in` operator (see
+        // the second parameter to `parseExpression`), and then check
+        // whether the next token is `in`. When there is no init part
+        // (semicolon immediately after the opening parenthesis), it is
+        // a regular `for` loop.
+
+      case _for:
+        next();
+        labels.push(loopLabel);
+        expect(_parenL, "Expected '(' after 'for'");
+        if (tokType === _semi) return parseFor(node, null);
+        if (tokType === _var) {
+          var init = startNode();
+          next();
+          parseVar(init, true);
+          finishNode(init, "VariableDeclaration");
+          if (init.declarations.length === 1 && eat(_in))
+            return parseForIn(node, init);
+          return parseFor(node, init);
+        }
+        var init = parseExpression(false, true);
+        if (eat(_in)) {checkLVal(init); return parseForIn(node, init);}
         return parseFor(node, init);
-      }
-      var init = parseExpression(false, true);
-      if (eat(_in)) {checkLVal(init); return parseForIn(node, init);}
-      return parseFor(node, init);
 
-    case _function:
-      next();
-      return parseFunction(node, true);
-
-    case _if:
-      next();
-      node.test = parseParenExpression();
-      node.consequent = parseStatement();
-      node.alternate = eat(_else) ? parseStatement() : null;
-      return finishNode(node, "IfStatement");
-
-    case _return:
-      if (!inFunction) raise(tokStart, "'return' outside of function");
-      next();
-
-      // In `return` (and `break`/`continue`), the keywords with
-      // optional arguments, we eagerly look for a semicolon or the
-      // possibility to insert one.
-
-      if (eat(_semi) || canInsertSemicolon()) node.argument = null;
-      else { node.argument = parseExpression(); semicolon(); }
-      return finishNode(node, "ReturnStatement");
-
-    case _switch:
-      next();
-      node.discriminant = parseParenExpression();
-      node.cases = [];
-      expect(_braceL, "Expected '{' in switch statement");
-      labels.push(switchLabel);
-
-      // Statements under must be grouped (by label) in SwitchCase
-      // nodes. `cur` is used to keep the node that we are currently
-      // adding statements to.
-
-      for (var cur, sawDefault; tokType != _braceR;) {
-        if (tokType === _case || tokType === _default) {
-          var isCase = tokType === _case;
-          if (cur) finishNode(cur, "SwitchCase");
-          node.cases.push(cur = startNode());
-          cur.consequent = [];
-          next();
-          if (isCase) cur.test = parseExpression();
-          else {
-            if (sawDefault) raise(lastStart, "Multiple default clauses"); sawDefault = true;
-            cur.test = null;
-          }
-          expect(_colon, "Expected ':' after case clause");
-        } else {
-          if (!cur) unexpected();
-          cur.consequent.push(parseStatement());
-        }
-      }
-      if (cur) finishNode(cur, "SwitchCase");
-      next(); // Closing brace
-      labels.pop();
-      return finishNode(node, "SwitchStatement");
-
-    case _throw:
-      next();
-      if (newline.test(input.slice(lastEnd, tokStart)))
-        raise(lastEnd, "Illegal newline after throw");
-      node.argument = parseExpression();
-      semicolon();
-      return finishNode(node, "ThrowStatement");
-
-    case _try:
-      next();
-      node.block = parseBlock();
-      node.handler = null;
-      if (tokType === _catch) {
-        var clause = startNode();
+      case _function:
         next();
-        expect(_parenL, "Expected '(' after 'catch'");
-        clause.param = parseIdent();
-        if (strict && isStrictBadIdWord(clause.param.name))
-          raise(clause.param.start, "Binding " + clause.param.name + " in strict mode");
-        expect(_parenR, "Expected closing ')' after catch");
-        clause.guard = null;
-        clause.body = parseBlock();
-        node.handler = finishNode(clause, "CatchClause");
-      }
-      node.guardedHandlers = empty;
-      node.finalizer = eat(_finally) ? parseBlock() : null;
-      if (!node.handler && !node.finalizer)
-        raise(node.start, "Missing catch or finally clause");
-      return finishNode(node, "TryStatement");
+        return parseFunction(node, true);
 
-    case _var:
-      next();
-      parseVar(node);
-      semicolon();
-      return finishNode(node, "VariableDeclaration");;
-
-    case _while:
-      next();
-      node.test = parseParenExpression();
-      labels.push(loopLabel);
-      node.body = parseStatement();
-      labels.pop();
-      return finishNode(node, "WhileStatement");
-
-    case _with:
-      if (strict) raise(tokStart, "'with' in strict mode");
-      next();
-      node.object = parseParenExpression();
-      node.body = parseStatement();
-      return finishNode(node, "WithStatement");
-
-    case _braceL:
-      return parseBlock();
-
-    case _semi:
-      next();
-      return finishNode(node, "EmptyStatement");
-
-    // Objective-J
-    case _interface:
-      if (options.objj) {
+      case _if:
         next();
-        node.classname = parseIdent(true);
-        if (eat(_colon))
-          node.superclassname = parseIdent(true);
-        else if (eat(_parenL)) {
-          node.categoryname = parseIdent(true);
-          expect(_parenR, "Expected closing ')' after category name");
-        }
-        if (tokVal === '<') {
-          next();
-          var protocols = [],
-              first = true;
-          node.protocols = protocols;
-          while (tokVal !== '>') {
-            if (!first)
-              expect(_comma, "Expected ',' between protocol names");
-            else first = false;
-            protocols.push(parseIdent(true));
-          }
-          next();
-        }
-        if (eat(_braceL)) {
-          node.ivardeclarations = [];
-          for (;;) {
-            if (eat(_braceR)) break;
-            parseIvarDeclaration(node);
-          }
-          node.endOfIvars = tokStart;
-        }
-        node.body = [];
-        while(!eat(_end)) {
-          if (tokType === _eof) raise(tokPos, "Expected '@end' after '@interface'");
-          node.body.push(parseClassElement());
-        }
-        return finishNode(node, "InterfaceDeclarationStatement");
-      }
-      break;
+        node.test = parseParenExpression();
+        node.consequent = parseStatement();
+        node.alternate = eat(_else) ? parseStatement() : null;
+        return finishNode(node, "IfStatement");
 
-    // Objective-J
-    case _implementation:
-      if (options.objj) {
+      case _return:
+        if (!inFunction) raise(tokStart, "'return' outside of function");
         next();
-        node.classname = parseIdent(true);
-        if (eat(_colon))
-          node.superclassname = parseIdent(true);
-        else if (eat(_parenL)) {
-          node.categoryname = parseIdent(true);
-          expect(_parenR, "Expected closing ')' after category name");
-        }
-        if (tokVal === '<') {
-          next();
-          var protocols = [],
-              first = true;
-          node.protocols = protocols;
-          while (tokVal !== '>') {
-            if (!first)
-              expect(_comma, "Expected ',' between protocol names");
-            else first = false;
-            protocols.push(parseIdent(true));
-          }
-          next();
-        }
-        if (eat(_braceL)) {
-          node.ivardeclarations = [];
-          for (;;) {
-            if (eat(_braceR)) break;
-            parseIvarDeclaration(node);
-          }
-          node.endOfIvars = tokStart;
-        }
-        node.body = [];
-        while(!eat(_end)) {
-          if (tokType === _eof) raise(tokPos, "Expected '@end' after '@implementation'");
-          node.body.push(parseClassElement());
-        }
-        return finishNode(node, "ClassDeclarationStatement");
-      }
-      break;
 
-    // Objective-J
-    case _protocol:
-      // If next token is a left parenthesis it is a ProtocolLiteral expression so bail out
-      if (options.objj && input.charCodeAt(tokPos) !== 40) { // '('
+        // In `return` (and `break`/`continue`), the keywords with
+        // optional arguments, we eagerly look for a semicolon or the
+        // possibility to insert one.
+
+        if (eat(_semi) || canInsertSemicolon()) node.argument = null;
+        else { node.argument = parseExpression(); semicolon(); }
+        return finishNode(node, "ReturnStatement");
+
+      case _switch:
         next();
-        node.protocolname = parseIdent(true);
-        if (tokVal === '<') {
-          next();
-          var protocols = [],
-              first = true;
-          node.protocols = protocols;
-          while (tokVal !== '>') {
-            if (!first)
-              expect(_comma, "Expected ',' between protocol names");
-            else first = false;
-            protocols.push(parseIdent(true));
-          }
-          next();
-        }
-        while(!eat(_end)) {
-          if (tokType === _eof) raise(tokPos, "Expected '@end' after '@protocol'");
-          if (eat(_required)) continue;
-          if (eat(_optional)) {
-            while(!eat(_required) && tokType !== _end) {
-              (node.optional || (node.optional = [])).push(parseProtocolClassElement());
+        node.discriminant = parseParenExpression();
+        node.cases = [];
+        expect(_braceL, "Expected '{' in switch statement");
+        labels.push(switchLabel);
+
+        // Statements under must be grouped (by label) in SwitchCase
+        // nodes. `cur` is used to keep the node that we are currently
+        // adding statements to.
+
+        for (var cur, sawDefault; tokType != _braceR;) {
+          if (tokType === _case || tokType === _default) {
+            var isCase = tokType === _case;
+            if (cur) finishNode(cur, "SwitchCase");
+            node.cases.push(cur = startNode());
+            cur.consequent = [];
+            next();
+            if (isCase) cur.test = parseExpression();
+            else {
+              if (sawDefault) raise(lastStart, "Multiple default clauses"); sawDefault = true;
+              cur.test = null;
             }
+            expect(_colon, "Expected ':' after case clause");
           } else {
-            (node.required || (node.required = [])).push(parseProtocolClassElement());
+            if (!cur) unexpected();
+            cur.consequent.push(parseStatement());
           }
         }
-        return finishNode(node, "ProtocolDeclarationStatement");
-      }
-      break;
+        if (cur) finishNode(cur, "SwitchCase");
+        next(); // Closing brace
+        labels.pop();
+        return finishNode(node, "SwitchStatement");
 
-    // Objective-J
-    case _import:
-      if (options.objj) {
+      case _throw:
         next();
-        if (tokType === _string)
-          node.localfilepath = true;
-        else if (tokType ===_filename)
-          node.localfilepath = false;
-        else
-          unexpected();
+        if (newline.test(input.slice(lastEnd, tokStart)))
+          raise(lastEnd, "Illegal newline after throw");
+        node.argument = parseExpression();
+        semicolon();
+        return finishNode(node, "ThrowStatement");
 
-        node.filename = parseStringNumRegExpLiteral();
-        return finishNode(node, "ImportStatement");
-      }
-      break;
-
-    // Objective-J
-    case _class:
-      if (options.objj) {
+      case _try:
         next();
-        node.id = parseIdent(false);
-        return finishNode(node, "ClassStatement");
-      }
-      break;
+        node.block = parseBlock();
+        node.handler = null;
+        if (tokType === _catch) {
+          var clause = startNode();
+          next();
+          expect(_parenL, "Expected '(' after 'catch'");
+          clause.param = parseIdent();
+          if (strict && isStrictBadIdWord(clause.param.name))
+            raise(clause.param.start, "Binding " + clause.param.name + " in strict mode");
+          expect(_parenR, "Expected closing ')' after catch");
+          clause.guard = null;
+          clause.body = parseBlock();
+          node.handler = finishNode(clause, "CatchClause");
+        }
+        node.guardedHandlers = empty;
+        node.finalizer = eat(_finally) ? parseBlock() : null;
+        if (!node.handler && !node.finalizer)
+          raise(node.start, "Missing catch or finally clause");
+        return finishNode(node, "TryStatement");
 
-    // Objective-J
-    case _global:
-      if (options.objj) {
+      case _var:
         next();
-        node.id = parseIdent(false);
-        return finishNode(node, "GlobalStatement");
-      }
-      break;
+        parseVar(node);
+        semicolon();
+        return finishNode(node, "VariableDeclaration");;
 
-    // Preprocessor
-    case _preprocess:
-      parsePreprocess();
-      return null;
-    }
+      case _while:
+        next();
+        node.test = parseParenExpression();
+        labels.push(loopLabel);
+        node.body = parseStatement();
+        labels.pop();
+        return finishNode(node, "WhileStatement");
+
+      case _with:
+        if (strict) raise(tokStart, "'with' in strict mode");
+        next();
+        node.object = parseParenExpression();
+        node.body = parseStatement();
+        return finishNode(node, "WithStatement");
+
+      case _braceL:
+        return parseBlock();
+
+      case _semi:
+        next();
+        return finishNode(node, "EmptyStatement");
+
+      // Objective-J
+      case _interface:
+        if (options.objj) {
+          next();
+          node.classname = parseIdent(true);
+          if (eat(_colon))
+            node.superclassname = parseIdent(true);
+          else if (eat(_parenL)) {
+            node.categoryname = parseIdent(true);
+            expect(_parenR, "Expected closing ')' after category name");
+          }
+          if (tokVal === '<') {
+            next();
+            var protocols = [],
+                first = true;
+            node.protocols = protocols;
+            while (tokVal !== '>') {
+              if (!first)
+                expect(_comma, "Expected ',' between protocol names");
+              else first = false;
+              protocols.push(parseIdent(true));
+            }
+            next();
+          }
+          if (eat(_braceL)) {
+            node.ivardeclarations = [];
+            for (;;) {
+              if (eat(_braceR)) break;
+              parseIvarDeclaration(node);
+            }
+            node.endOfIvars = tokStart;
+          }
+          node.body = [];
+          while(!eat(_end)) {
+            if (tokType === _eof) raise(tokPos, "Expected '@end' after '@interface'");
+            node.body.push(parseClassElement());
+          }
+          return finishNode(node, "InterfaceDeclarationStatement");
+        }
+        break;
+
+      // Objective-J
+      case _implementation:
+        if (options.objj) {
+          next();
+          node.classname = parseIdent(true);
+          if (eat(_colon))
+            node.superclassname = parseIdent(true);
+          else if (eat(_parenL)) {
+            node.categoryname = parseIdent(true);
+            expect(_parenR, "Expected closing ')' after category name");
+          }
+          if (tokVal === '<') {
+            next();
+            var protocols = [],
+                first = true;
+            node.protocols = protocols;
+            while (tokVal !== '>') {
+              if (!first)
+                expect(_comma, "Expected ',' between protocol names");
+              else first = false;
+              protocols.push(parseIdent(true));
+            }
+            next();
+          }
+          if (eat(_braceL)) {
+            node.ivardeclarations = [];
+            for (;;) {
+              if (eat(_braceR)) break;
+              parseIvarDeclaration(node);
+            }
+            node.endOfIvars = tokStart;
+          }
+          node.body = [];
+          while(!eat(_end)) {
+            if (tokType === _eof) raise(tokPos, "Expected '@end' after '@implementation'");
+            node.body.push(parseClassElement());
+          }
+          return finishNode(node, "ClassDeclarationStatement");
+        }
+        break;
+
+      // Objective-J
+      case _protocol:
+        // If next token is a left parenthesis it is a ProtocolLiteral expression so bail out
+        if (options.objj && input.charCodeAt(tokPos) !== 40) { // '('
+          next();
+          node.protocolname = parseIdent(true);
+          if (tokVal === '<') {
+            next();
+            var protocols = [],
+                first = true;
+            node.protocols = protocols;
+            while (tokVal !== '>') {
+              if (!first)
+                expect(_comma, "Expected ',' between protocol names");
+              else first = false;
+              protocols.push(parseIdent(true));
+            }
+            next();
+          }
+          while(!eat(_end)) {
+            if (tokType === _eof) raise(tokPos, "Expected '@end' after '@protocol'");
+            if (eat(_required)) continue;
+            if (eat(_optional)) {
+              while(!eat(_required) && tokType !== _end) {
+                (node.optional || (node.optional = [])).push(parseProtocolClassElement());
+              }
+            } else {
+              (node.required || (node.required = [])).push(parseProtocolClassElement());
+            }
+          }
+          return finishNode(node, "ProtocolDeclarationStatement");
+        }
+        break;
+
+      // Objective-J
+      case _import:
+        if (options.objj) {
+          next();
+          if (tokType === _string)
+            node.localfilepath = true;
+          else if (tokType ===_filename)
+            node.localfilepath = false;
+          else
+            unexpected();
+
+          node.filename = parseStringNumRegExpLiteral();
+          return finishNode(node, "ImportStatement");
+        }
+        break;
+
+      // Objective-J
+      case _class:
+        if (options.objj) {
+          next();
+          node.id = parseIdent(false);
+          return finishNode(node, "ClassStatement");
+        }
+        break;
+
+      // Objective-J
+      case _global:
+        if (options.objj) {
+          next();
+          node.id = parseIdent(false);
+          return finishNode(node, "GlobalStatement");
+        }
+        break;
+
+      // Preprocessor
+      case _preprocess:
+        parsePreprocess();
+        continue;
+      }
 
       // The indentation is one step to the right here to make sure it
       // is the same as in the original acorn parser. Easier merge
@@ -2890,6 +2891,10 @@
         semicolon();
         return finishNode(node, "ExpressionStatement");
       }
+    }
+    while (tokType !== terminator);
+
+    return null;
   }
 
   function parseIvarDeclaration(node) {
@@ -3016,7 +3021,6 @@
   function parseProtocolClassElement() {
     var element = startNode();
     parseMethodDeclaration(element);
-
     semicolon();
     return finishNode(element, "MethodDeclarationStatement");
   }
@@ -3040,13 +3044,15 @@
     node.body = [];
     expect(_braceL, "Expected '{' before block");
     while (!eat(_braceR)) {
-      var stmt = parseStatement();
-      node.body.push(stmt);
-      if (first && allowStrict && isUseStrict(stmt)) {
-        oldStrict = strict;
-        setStrict(strict = true);
+      var stmt = parseStatement(_braceR);
+      if (stmt !== null) {
+        node.body.push(stmt);
+        if (first && allowStrict && isUseStrict(stmt)) {
+          oldStrict = strict;
+          setStrict(strict = true);
+        }
+        first = false;
       }
-      first = false;
     }
     if (strict && !oldStrict) setStrict(false);
     return finishNode(node, "BlockStatement");
