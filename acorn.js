@@ -1766,7 +1766,7 @@
             skipToNextPreDirective();
         }
         else
-          raise(tokStart, "#endif without matching #if");
+          raise(directivePos, "#endif without matching #if");
         break;
 
       case _prePragma:
@@ -1861,16 +1861,6 @@
       }
       readToken();
     }
-  }
-
-  function readToken_stringify() {
-    skipSpace();
-    next();
-    // The next token should be a name
-    if (tokType === _name)
-      return finishToken(_stringifiedName, tokVal);
-    else
-      raise(tokStart, "# (stringify) must be followed by a name");
   }
 
   function preprocessEvalExpression(expr) {
@@ -2156,6 +2146,16 @@
 
   var whitespaceRegex = /\s+/g;
   var stringRegex = /(['"])((?:[^\\\"]+|\\.)*)\1/g;
+
+  function readToken_stringify() {
+    skipSpace();
+    next();
+    // The next token should be a name
+    if (tokType === _name)
+      return finishToken(_stringifiedName, tokVal);
+    else
+      raise(tokStart, "# (stringify) must be followed by a name");
+  }
 
   function stringifyTokens(tokens) {
     var result = '"';
