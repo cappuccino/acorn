@@ -371,8 +371,8 @@
   // These are the general types. The `type` property is only used to
   // make them recognizeable when debugging.
 
-  var _num = {type: "num"}, _regexp = {type: "regexp"}, _string = {type: "string"};
-  var _name = {type: "name"}, _eof = {type: "eof"}, _eol = {type: "eol"};
+  var _num = {type: "num", preprocess: true}, _regexp = {type: "regexp"}, _string = {type: "string", preprocess: true};
+  var _name = {type: "name", preprocess: true}, _eof = {type: "eof"}, _eol = {type: "eol", preprocess: true};
 
   // Keyword tokens. The `keyword` property (also used in keyword-like
   // operators) indicates that the token originated from an
@@ -399,8 +399,8 @@
 
   // The keywords that denote values.
 
-  var _null = {keyword: "null", atomValue: null}, _true = {keyword: "true", atomValue: true};
-  var _false = {keyword: "false", atomValue: false};
+  var _null = {keyword: "null", atomValue: null, preprocess: true}, _true = {keyword: "true", atomValue: true, preprocess: true};
+  var _false = {keyword: "false", atomValue: false, preprocess: true};
 
   // Some keywords are treated as regular operators. `in` sometimes
   // (when parsing `for`) needs to be tested against specifically, so
@@ -436,7 +436,6 @@
   var _preEndif = {keyword: "endif"};
   var _preElseIf = {keyword: "elif"};
   var _prePragma = {keyword: "pragma"};
-  var _preDefined = {keyword: "defined"};
 
   // Special tokens used within a macro body only
 
@@ -471,13 +470,12 @@
   // Map Preprocessor keyword names to token types.
 
   var keywordTypesPreprocessor = {"define": _preDefine, "pragma": _prePragma, "ifdef": _preIfdef, "ifndef": _preIfndef,
-                                "undef": _preUndef, "if": _preIf, "endif": _preEndif, "else": _preElse, "elif": _preElseIf,
-                                "defined": _preDefined};
+                                  "undef": _preUndef, "if": _preIf, "endif": _preEndif, "else": _preElse, "elif": _preElseIf};
 
   // Punctuation token types. Again, the `type` property is purely for debugging.
 
   var _bracketL = {type: "[", beforeExpr: true}, _bracketR = {type: "]"}, _braceL = {type: "{", beforeExpr: true};
-  var _braceR = {type: "}"}, _parenL = {type: "(", beforeExpr: true}, _parenR = {type: ")"};
+  var _braceR = {type: "}"}, _parenL = {type: "(", beforeExpr: true, preprocess: true}, _parenR = {type: ")", preprocess: true};
   var _comma = {type: ",", beforeExpr: true}, _semi = {type: ";", beforeExpr: true};
   var _colon = {type: ":", beforeExpr: true}, _dot = {type: "."}, _question = {type: "?", beforeExpr: true};
 
@@ -500,15 +498,22 @@
   // `isAssign` marks all of `=`, `+=`, `-=` etcetera, which act as
   // binary operators with a very low precedence, that should result
   // in AssignmentExpression nodes.
+  //
+  // `preprocess` marks operators that allowed in #if expressions.
 
-  var _slash = {binop: 10, beforeExpr: true}, _eq = {isAssign: true, beforeExpr: true};
-  var _assign = {isAssign: true, beforeExpr: true}, _plusmin = {binop: 9, prefix: true, beforeExpr: true};
-  var _incdec = {postfix: true, prefix: true, isUpdate: true}, _prefix = {prefix: true, beforeExpr: true};
-  var _bin1 = {binop: 1, beforeExpr: true}, _bin2 = {binop: 2, beforeExpr: true};
-  var _bin3 = {binop: 3, beforeExpr: true}, _bin4 = {binop: 4, beforeExpr: true};
-  var _bin5 = {binop: 5, beforeExpr: true}, _bin6 = {binop: 6, beforeExpr: true};
-  var _bin7 = {binop: 7, beforeExpr: true}, _bin8 = {binop: 8, beforeExpr: true};
-  var _bin10 = {binop: 10, beforeExpr: true};
+  var _slash = {binop: 10, beforeExpr: true, preprocess: true}, _eq = {isAssign: true, beforeExpr: true};
+  var _assign = {isAssign: true, beforeExpr: true};
+  var _incDec = {postfix: true, prefix: true, isUpdate: true}, _prefix = {prefix: true, beforeExpr: true, preprocess: true};
+  var _logicalOR = {binop: 1, beforeExpr: true, preprocess: true};
+  var _logicalAND = {binop: 2, beforeExpr: true, preprocess: true};
+  var _bitwiseOR = {binop: 3, beforeExpr: true, preprocess: true};
+  var _bitwiseXOR = {binop: 4, beforeExpr: true, preprocess: true};
+  var _bitwiseAND = {binop: 5, beforeExpr: true, preprocess: true};
+  var _equality = {binop: 6, beforeExpr: true, preprocess: true};
+  var _relational = {binop: 7, beforeExpr: true, preprocess: true};
+  var _bitShift = {binop: 8, beforeExpr: true, preprocess: true};
+  var _plusMin = {binop: 9, prefix: true, beforeExpr: true, preprocess: true};
+  var _multiplyModulo = {binop: 10, beforeExpr: true, preprocess: true};
 
   // Provide access to the token types for external users of the
   // tokenizer.
@@ -595,8 +600,7 @@
 
   // The preprocessor keywords and tokens.
 
-  var isKeywordPreprocessor = makePredicate("define undef pragma if ifdef ifndef else elif endif defined");
-  var preprocessorTokens = [_preIf, _preIfdef, _preIfndef, _preElse, _preElseIf, _preEndif];
+  var isKeywordPreprocessor = makePredicate("define undef pragma if ifdef ifndef else elif endif");
 
   // ## Character categories
 
@@ -664,6 +668,7 @@
     tokCommentsAfter = null;
     lastTokCommentsAfter = null;
     tokSpaces = null;
+    preprocessorState = preprocessorState_none;
     skipSpace();
     firstTokenOnLine = true;
   }
@@ -738,7 +743,7 @@
       if (ch === 32) { // ' '
         ++tokPos;
       } else if (ch === 13) {
-        if (preprocessorState === preprocessorState_directive || preprocessorState === preprocessorState_macroBody)
+        if ((preprocessorState & preprocessorState_directive) !== 0)
           break;
         lastIsNewlinePos = tokPos;
         ++tokPos;
@@ -753,7 +758,7 @@
         // Inform the preprocessor that we saw eol
         firstTokenOnLine = true;
       } else if (ch === 10 || ch === 8232 || ch === 8233) {
-        if (preprocessorState === preprocessorState_directive || preprocessorState === preprocessorState_macroBody)
+        if ((preprocessorState & preprocessorState_directive) !== 0)
           break;
         lastIsNewlinePos = tokPos;
         ++tokPos;
@@ -768,7 +773,7 @@
       } else if (ch === 47) { // '/'
         var next = input.charCodeAt(tokPos + 1);
         if (next === 42) { // '*'
-          if (options.trackSpaces && preprocessorState === preprocessorState_none)
+          if (options.trackSpaces)
             (tokSpaces || (tokSpaces = [])).push(input.slice(spaceStart, tokPos));
           skipBlockComment(lastIsNewlinePos);
           spaceStart = tokPos;
@@ -778,7 +783,7 @@
           skipLineComment(lastIsNewlinePos);
           spaceStart = tokPos;
         } else break;
-      } else if (ch === 92 && preprocessorState === preprocessorState_macroBody) { // '\'
+      } else if (ch === 92 && (preprocessorState & preprocessorState_directive) !== 0) { // '\'
         // The gcc docs say that newline must immediately follow
         ++tokPos;
         var haveNewline = false;
@@ -826,7 +831,7 @@
   function readToken_dot(code) {
     var next = input.charCodeAt(tokPos + 1);
     if (next >= 48 && next <= 57) return readNumber(String.fromCharCode(code));
-    if (next === 46 && options.objj && input.charCodeAt(tokPos+2) === 46) { //'.'
+    if (next === 46 && options.objj && input.charCodeAt(tokPos + 2) === 46) { //'.'
       tokPos += 3;
       return finishToken(_dotdotdot);
     }
@@ -844,20 +849,20 @@
   function readToken_mult_modulo() { // '%*'
     var next = input.charCodeAt(tokPos + 1);
     if (next === 61) return finishOp(_assign, 2);
-    return finishOp(_bin10, 1);
+    return finishOp(_multiplyModulo, 1);
   }
 
   function readToken_pipe_amp(code) { // '|&'
     var next = input.charCodeAt(tokPos + 1);
-    if (next === code) return finishOp(code === 124 ? _bin1 : _bin2, 2);
+    if (next === code) return finishOp(code === 124 ? _logicalOR : _logicalAND, 2);
     if (next === 61) return finishOp(_assign, 2);
-    return finishOp(code === 124 ? _bin3 : _bin5, 1);
+    return finishOp(code === 124 ? _bitwiseOR : _bitwiseAND, 1);
   }
 
   function readToken_caret() { // '^'
     var next = input.charCodeAt(tokPos + 1);
     if (next === 61) return finishOp(_assign, 2);
-    return finishOp(_bin4, 1);
+    return finishOp(_bitwiseXOR, 1);
   }
 
   function readToken_plus_min(code) { // '+-'
@@ -871,10 +876,10 @@
         skipSpace();
         return readToken();
       }
-      return finishOp(_incdec, 2);
+      return finishOp(_incDec, 2);
     }
     if (next === 61) return finishOp(_assign, 2);
-    return finishOp(_plusmin, 1);
+    return finishOp(_plusMin, 1);
   }
 
   function readToken_lt_gt(code) { // '<>'
@@ -890,9 +895,9 @@
     var next = input.charCodeAt(tokPos + 1);
     var size = 1;
     if (next === code) {
-      size = code === 62 && input.charCodeAt(tokPos+2) === 62 ? 3 : 2;
+      size = code === 62 && input.charCodeAt(tokPos + 2) === 62 ? 3 : 2;
       if (input.charCodeAt(tokPos + size) === 61) return finishOp(_assign, size + 1);
-      return finishOp(_bin8, size);
+      return finishOp(_bitShift, size);
     }
     if (next == 33 && code == 60 && input.charCodeAt(tokPos + 2) == 45 &&
         input.charCodeAt(tokPos + 3) == 45) {
@@ -903,13 +908,13 @@
       return readToken();
     }
     if (next === 61)
-      size = input.charCodeAt(tokPos+2) === 61 ? 3 : 2;
-    return finishOp(_bin7, size);
+      size = input.charCodeAt(tokPos + 2) === 61 ? 3 : 2;
+    return finishOp(_relational, size);
   }
 
   function readToken_eq_excl(code) { // '=!'
     var next = input.charCodeAt(tokPos + 1);
-    if (next === 61) return finishOp(_bin6, input.charCodeAt(tokPos+2) === 61 ? 3 : 2);
+    if (next === 61) return finishOp(_equality, input.charCodeAt(tokPos + 2) === 61 ? 3 : 2);
     return finishOp(code === 61 ? _eq : _prefix, 1);
   }
 
@@ -998,7 +1003,7 @@
       ++tokPos;
       if (options.preprocess) {
         // # within a macro body might be a stringification or it might be ##
-        if (preprocessorState === preprocessorState_macroBody) {
+        if ((preprocessorState & preprocessorState_macroBody) !== 0) {
           code = input.charCodeAt(tokPos);
           if (code === 35) {
             ++tokPos;
@@ -1007,12 +1012,10 @@
           else
             return readToken_stringify();
         }
-        if (preprocessorState === preprocessorState_none || preprocessorState === preprocessorState_postDirective) {
-          // Preprocessor directives are only valid at the beginning of the line
-          if (!firstTokenOnLine)
-            raise(--tokPos, "Preprocessor directives may only be used at the beginning of a line");
-          return finishToken(_preprocess);
-        }
+        // Preprocessor directives are only valid at the beginning of the line
+        if (!firstTokenOnLine)
+          raise(--tokPos, "Preprocessor directives may only be used at the beginning of a line");
+        return finishToken(_preprocess);
       }
       return false;
 
@@ -1020,12 +1023,8 @@
     case 13:
     case 8232:
     case 8233:
-      if (preprocessorState === preprocessorState_directive || preprocessorState === preprocessorState_macroBody) {
-        // eol terminates a preprocessor statement
-        if (preprocessorState === preprocessorState_directive)
-          preprocessorState = preprocessorState_none;
-        else
-          preprocessorState = preprocessorState_postDirective;
+      if ((preprocessorState & preprocessorState_directive) !== 0) {
+        preprocessorState ^= preprocessorState_directive;
         // Inform the preprocessor that we saw eol
         finishToken(_eol);
         return;
@@ -1230,6 +1229,9 @@
         if (containsEsc) word += input.charAt(tokPos);
         ++tokPos;
       } else if (ch === 92) { // "\"
+        // If we are in a directive, "\" is a line continuation
+        if ((preprocessorState & preprocessorState_directive) !== 0)
+          break;
         if (!containsEsc) word = input.slice(start, tokPos);
         containsEsc = true;
         if (input.charCodeAt(++tokPos) != 117) // "u"
@@ -1257,12 +1259,12 @@
     var word = preReadWord || readWord1();
     var type = _name;
     if (!containsEsc) {
-      if (options.preprocess && preprocessorState === preprocessorState_none) {
+      if (options.preprocess) {
         if (tokType === _preprocess && isKeywordPreprocessor(word)) {
-          preprocessorState = preprocessorState_directive;
+          preprocessorState |= preprocessorState_directive;
           return finishToken(keywordTypesPreprocessor[word], word);
         }
-        else if (!preSkipping) {
+        else if (!preSkipping && (preprocessorState & preprocessorState_expandMacros) !== 0) {
           var macro;
           if ((macro = getMacro(word)) !== undefined)
             return expandMacro(macro, tokenStream);
@@ -1280,14 +1282,18 @@
 
   // ## Preprocessor
 
-  // We need to keep track of what state the preprocessor is in.
+  // We need to keep track of what state the preprocessor is in. The following are bit flags
+  // that indicate various states we use to control the behavior of the lexer/parser.
 
   var preprocessorState;
-  var preprocessorState_none = 0;  // Not handling preprocessor directives
-  var preprocessorState_directive = 1;  // Parsing a preprocessor directive
-  var preprocessorState_macroBody = 2;  // Parsing a macro body
-  var preprocessorState_postDirective = 3;  // Finished parsing a macro body, but macro is not yet stored
-  var preprocessorState_macroExpansion = 4;  // Expanding a macro call
+  var preprocessorState_expandMacros   = 1 << 0;  // Determines whether macro names are looked up and expanded
+  var preprocessorState_directive      = 1 << 1;  // Within a preprocessor directive
+  var preprocessorState_macroBody      = 1 << 2;  // Parsing a macro body
+  var preprocessorState_macroExpansion = 1 << 3;  // Expanding a macro call
+
+  // Default state when not handling preprocessor directives
+
+  var preprocessorState_none = preprocessorState_expandMacros;
 
   // When expanding a macro, the tokens are stored in this array.
   // It is switched to point to macro arguments and macro body token streams
@@ -1380,7 +1386,6 @@
     orphanedSpaces = null;
     preIfStack = [];
     preSkipping = false;
-    preprocessorState = preprocessorState_none;
     preprocessorGetToken = exports.tokenize(inpt, opts);
     addPredefinedMacros();
     defineMacros(options.macros, false);
@@ -1439,12 +1444,10 @@
       input = name + " " + body;
       inputLen = input.length;
       initTokenState();
-      preprocessorState = preprocessorState_none;
       parseDefine();
     }
     input = savedInput;
     inputLen = input.length;
-    preprocessorState = preprocessorState_none;
   }
 
   function addMacro(macro) {
@@ -1555,18 +1558,20 @@
 
   function parseDefine() {
     next();
-    expect(_name, "Expected a name after #define");
-    var macroIdentifierEnd = tokEnd;
+    var nameStart = tokStart;
+    var nameEnd = tokEnd;
     var name = tokVal;
+    expect(_name, "Expected a name after #define");
     if (name === "__VA_ARGS__")
-      raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
-
+      raise(nameStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
+    else if (name === "defined")
+      raise(nameStart, "'defined' may not be used as a macro name");
     var parameters = [];
     var parameterMap = Object.create(null);  // Don't inherit from Object
     var isFunction = false;
     var isVariadic = false;
     // '(' Must follow directly after identifier to be a valid macro with parameters
-    if (input.charCodeAt(macroIdentifierEnd) === 40) { // '('
+    if (input.charCodeAt(nameEnd) === 40) { // '('
       // Read macro parameters
       expect(_parenL);
       isFunction = true;
@@ -1601,11 +1606,9 @@
           raise(tokStart, "Unexpected token in macro parameters");
         }
       }
-      preprocessorState = preprocessorState_macroBody;
       next();
     }
-    else
-      preprocessorState = preprocessorState_macroBody;
+    preprocessorState |= preprocessorState_macroBody;
     var tokens = [];
     // Read macro body tokens until eof or eol that is not preceded by '\'
     scanBody:
@@ -1618,10 +1621,12 @@
           break;
 
         case _eol:
+          preprocessorState ^= preprocessorState_macroBody;
           next();
-          // fall through to break scanBody
+          break scanBody;
 
         case _eof:
+          preprocessorState ^= preprocessorState_macroBody;
           break scanBody;
       }
       tokens.push(makeToken());
@@ -1635,6 +1640,23 @@
         raise(tokens[tokens.length - 1].start, "## may not be at the end of a macro");
     }
     addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, tokens));
+  }
+
+  function parsePreIf(startPos) {
+    var state = {pos: startPos, state: preIf, skipping: false};
+    preIfStack.push(state);
+    next();
+    if (preSkipping)
+      skipToNextPreDirective();
+    else {
+      var expr = preprocessParseExpression();
+      expect(_eol, "#if expressions must be followed by the token EOL");
+      var value = preprocessEvalExpression(expr);
+      if (!value) {
+        state.skipping = true;
+        skipToNextPreDirective();
+      }
+    }
   }
 
   function parsePreprocess() { // '#'
@@ -1665,7 +1687,6 @@
       orphanedSpaces = null;
     var directivePos = tokStart;
     next();
-    preprocessorState = preprocessorState_directive;
     var checkForMacro = true;
     var directive = tokType;
     switch (directive) {
@@ -1692,20 +1713,7 @@
         break;
 
       case _preIf:
-        var state = {pos: directivePos, state: preIf, skipping: false};
-        preIfStack.push(state);
-        next();
-        if (preSkipping)
-          skipToNextPreDirective();
-        else {
-          var expr = parseExpression();
-          expect(_eol, "#if expressions must be followed by the token EOL");
-          var test = preprocessEvalExpression(expr);
-          if (!test) {
-            state.skipping = true;
-            skipToNextPreDirective();
-          }
-        }
+        parsePreIf(directivePos);
         break;
 
       case _preIfdef:
@@ -1751,7 +1759,7 @@
             finishToken(_preElse);
           }
         } else
-          raise(preTokStart, "#else without #if");
+          raise(tokStart, "#else without #if");
         break;
 
       case _preEndif:
@@ -1863,49 +1871,207 @@
     }
   }
 
+  /*
+    #if expression parser. The GCC docs state that the expression is of integer
+    (which in C is also boolean) type and may contain:
+
+    - Integer constants.
+
+    - Arithmetic operators for addition, subtraction, multiplication, division,
+      bitwise operations, shifts, comparisons, and logical operations (&& and ||).
+      The latter two obey the usual short-circuiting rules of standard C.
+
+    - Macros. All macros in the expression are expanded before actual computation
+      of the expression's value begins.
+
+    - Uses of the `defined` operator, which lets you check whether macros are defined
+      in the middle of an `#if'.
+
+    - Identifiers that are not macros, which are all considered to be the number zero.
+      This allows you to write #if MACRO instead of #ifdef MACRO, if you know that MACRO,
+      when defined, will always have a nonzero value. Function-like macros used without
+      their function call parentheses are also treated as zero.
+
+    We extend this syntax to allow:
+
+    - The boolean constants true and false.
+
+    - The constant null.
+
+    - String literals.
+
+    The functions below are analogous to their parseX equivalents, but with the
+    syntax restrictions mentioned above.
+  */
+
+  function preprocessParseExpression() {
+    return preprocessParseExprOps();
+  }
+
+  function preprocessParseExprOps() {
+    return preprocessParseExprOp(preprocessParseMaybeUnary(), -1);
+  }
+
+  function preprocessParseExprOp(left, minPrec) {
+    var prec = tokType.binop;
+    if (prec) {
+      // Only operators marked with a preprocessor attribute are allowed
+      if (tokType.preprocess === undefined)
+        raise(tokStart, "Invalid #if expression operator: '" + tokVal + "'");
+      if (prec > minPrec) {
+        var node = startNodeFrom(left);
+        node.left = left;
+        node.operator = tokVal;
+        var op = tokType;
+        next();
+        node.right = preprocessParseExprOp(preprocessParseMaybeUnary(), prec);
+        var exprNode = finishNode(node, (op === _logicalAND || op === _logicalOR) ? "LogicalExpression" : "BinaryExpression");
+        return preprocessParseExprOp(node, minPrec);
+      }
+    }
+    return left;
+  }
+
+  function preprocessParseMaybeUnary() {
+    if (tokType.preprocess && tokType.prefix) {
+      var node = startNode();
+      node.operator = tokVal;
+      node.prefix = true;
+      next();
+      node.argument = preprocessParseMaybeUnary();
+      return finishNode(node, "UnaryExpression");
+    }
+    return preprocessParseExprAtom();
+  }
+
+  function preprocessParseExprAtom() {
+    switch (tokType) {
+      case _name:
+        // We have to temporarily turn macro expansion off when we call parseIdent(),
+        // because it does next(), and if the name is "defined", the name after that
+        // should be a macro, and we don't want that to be expanded.
+        preprocessorState ^= preprocessorState_expandMacros;
+        var id = parseIdent();
+        if (id.name === "defined")
+          id = preprocessParseDefined(id);
+        else if (id.name === "undefined")
+          raise(id.start, "Invalid #if expression token: '" + id.name + "'");
+        // We can resume macro expansion now
+        preprocessorState |= preprocessorState_expandMacros;
+        return id;
+
+      case _num: case _string:
+        return parseStringNumRegExpLiteral();
+
+      case _parenL:
+        var tokStart1 = tokStart;
+        next();
+        var val = preprocessParseExpression();
+        val.start = tokStart1;
+        val.end = tokEnd;
+        expect(_parenR, "Expected closing ')' in #if expression");
+        return val;
+
+      default:
+        raise(tokStart, "Invalid #if expression token: '" + tokVal + "'");
+    }
+  }
+
+  function preprocessParseDefined(node) {
+    var newNode = startNodeFrom(node);
+    var haveParens = tokType === _parenL;
+    if (haveParens)
+      next();
+    if (tokType !== _name)
+      raise(tokStart, "Expected a name following 'defined'");
+    newNode.name = tokVal;
+    next();
+    if (haveParens)
+      expect(_parenR, "')' expected after macro name");
+    return finishNode(newNode, "DefinedExpression");
+  }
+
   function preprocessEvalExpression(expr) {
     return walk.recursive(expr, {}, {
+      UnaryExpression: function(node, st, c) {
+        switch (node.operator) {
+          case "!":
+            return !c(node.argument, st);
+
+          case "~":
+            return ~c(node.argument, st);
+        }
+      },
       BinaryExpression: function(node, st, c) {
         var left = node.left, right = node.right;
         switch (node.operator) {
           case "+":
             return c(left, st) + c(right, st);
+
           case "-":
             return c(left, st) - c(right, st);
+
           case "*":
             return c(left, st) * c(right, st);
+
           case "/":
             return c(left, st) / c(right, st);
+
           case "%":
             return c(left, st) % c(right, st);
+
+          case ">>":
+            return c(left, st) >> c(right, st);
+
+          case ">>>":
+            return c(left, st) >>> c(right, st);
+
+          case "<<":
+            return c(left, st) << c(right, st);
+
           case "<":
             return c(left, st) < c(right, st);
+
           case ">":
             return c(left, st) > c(right, st);
-          case "=":
+
           case "==":
+            return c(left, st) == c(right, st);
+
           case "===":
             return c(left, st) === c(right, st);
+
           case "<=":
             return c(left, st) <= c(right, st);
+
           case ">=":
             return c(left, st) >= c(right, st);
-          case "&&":
-            return c(left, st) && c(right, st);
+
+          case "&":
+            return c(left, st) & c(right, st);
+
+          case "|":
+            return c(left, st) | c(right, st);
+        }
+      },
+      LogicalExpression: function(node, st, c) {
+        var left = node.left, right = node.right;
+        switch (node.operator) {
           case "||":
             return c(left, st) || c(right, st);
+
+          case "&&":
+            return c(left, st) && c(right, st);
         }
       },
       Literal: function(node, st, c) {
         return node.value;
       },
       Identifier: function(node, st, c) {
-        var name = node.name,
-            macro = getMacro(name);
-        return (macro !== undefined && parseInt(macro.macro)) || 0;
+        return isMacro(node.name) ? 1 : 0;
       },
       DefinedExpression: function(node, st, c) {
-        return !!getMacro(node.id.name);
+        return isMacro(node.name);
       }
     }, {});
   }
@@ -2008,7 +2174,7 @@
     finishToken(_name, macro.identifier);
     var nameToken = makeToken();
     var savedState = preprocessorState;
-    preprocessorState = preprocessorState_macroExpansion;
+    preprocessorState |= preprocessorState_macroExpansion;
     next();
     var isMacroCall = true;
     var args = null;
@@ -3136,7 +3302,7 @@
 
   function parseMethodDeclaration(node) {
     node.methodtype = tokVal;
-    expect(_plusmin, "Method declaration must start with '+' or '-'");
+    expect(_plusMin, "Method declaration must start with '+' or '-'");
     // If we find a '(' we have a return type to parse
     if (eat(_parenL)) {
       var typeNode = startNode();
@@ -3354,9 +3520,10 @@
         var node = startNodeFrom(left);
         node.left = left;
         node.operator = tokVal;
+        var op = tokType;
         next();
         node.right = parseExprOp(parseMaybeUnary(), prec, noIn);
-        var exprNode = finishNode(node, /&&|\|\|/.test(node.operator) ? "LogicalExpression" : "BinaryExpression");
+        var exprNode = finishNode(node, (op === _logicalAND || op === _logicalOR) ? "LogicalExpression" : "BinaryExpression");
         return parseExprOp(exprNode, minPrec, noIn);
       }
     }
