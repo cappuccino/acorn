@@ -2027,7 +2027,15 @@
         preprocessorState |= preprocessorState_expandMacros;
         break;
 
-      case _num: case _string:
+      case _num:
+        // Only integer values are allowed
+        if (/^\d+$/.test(tokVal.toString()))
+          node = parseStringNumRegExpLiteral();
+        else
+          raise(tokStart, "Non-integer number in #if expression");
+        break;
+
+      case _string:
         node = parseStringNumRegExpLiteral();
         break;
 
@@ -2127,6 +2135,9 @@
 
           case "|":
             return c(left, st) | c(right, st);
+
+          case "^":
+            return c(left, st) ^ c(right, st);
         }
       },
       LogicalExpression: function(node, st, c) {
