@@ -3,22 +3,43 @@
     "description": "JavaScript (ECMAScript) and Objective-J parser with preprocessor.",
     "homepage": "http://github.com/mrcarlberg/acorn",
     "main": "acorn.js",
-    "version": "0.3.3-objj-3",
-    "engines": {"node": ">=0.4.0"},
-    "contributors": [{"name": "Martin Carlberg",
-                     "email": "martin@carlberg.org",
-                     "web": "http://carlberg.org"}],
-    "repository": {"type": "git",
-                   "url": "https://github.com/mrcarlberg/acorn.git"},
+    "version": "1.0.0",
+    "engines": {"node": ">=0.8.0"},
+    "contributors": [
+        {
+            "name": "Marijn Haverbeke",
+            "email": "marijnh@gmail.com",
+            "web": "http://marijnhaverbeke.nl"
+        },
+        {
+            "name": "Martin Carlberg",
+            "email": "martin@carlberg.org",
+            "web": "http://carlberg.org"
+        },
+        {
+            "name": "Aparajita Fishman",
+            "email": "aparajita@aparajita.com",
+            "web": "http://www.aparajita.com"
+        }
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/mrcarlberg/acorn.git"
+    },
     "bugs": "https://github.com/mrcarlberg/acorn/issues",
-    "licenses": [{"type": "MIT",
-                  "url": "http://marijnhaverbeke.nl/acorn/LICENSE"}],
+    "licenses": [
+        {
+            "type": "MIT",
+            "url": "http://marijnhaverbeke.nl/acorn/LICENSE"
+        }
+    ],
     "scripts": {"test": "node test/run.js"},
     "bin": {"acorn": "./bin/acorn"},
     "keywords": [
         "JavaScript",
         "ECMAScript",
         "Objective-J",
+        "objj",
         "parser",
         "preprocessor",
         "pre-processor",
