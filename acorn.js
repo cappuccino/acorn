@@ -2597,7 +2597,7 @@
       if (pastedToken !== null)
         pastedTokens.push(pastedToken);
       else {
-        console.warn("Warning: pasting formed '" + tokenText + "', an invalid token " + makeLineColumnDisplay(macro.tokens[index + 1]));
+        console.warn("Warning: preprocessor token pasting formed '" + tokenText + "', an invalid token " + makeLineColumnDisplay(macro.tokens[index + 1]));
         pastedTokens.push(leftToken, rightToken);
       }
     }
