@@ -404,8 +404,8 @@
 
   // The keywords that denote values.
 
-  var _null = {keyword: "null", atomValue: null}, _true = {keyword: "true", atomValue: true};
-  var _false = {keyword: "false", atomValue: false};
+  var _null = {keyword: "null", atomValue: null}, _true = {keyword: "true", atomValue: true, preprocess: true};
+  var _false = {keyword: "false", atomValue: false, preprocess: true};
 
   // Some keywords are treated as regular operators. `in` sometimes
   // (when parsing `for`) needs to be tested against specifically, so
@@ -2039,6 +2039,14 @@
         node = parseStringNumRegExpLiteral();
         break;
 
+      case _true:
+      case _false:
+        var node = startNode();
+        node.value = tokType.atomValue;
+        node.raw = tokType.keyword;
+        next();
+        return finishNode(node, "Literal");
+
       case _parenL:
         var tokStart1 = tokStart;
         next();
@@ -2123,6 +2131,12 @@
 
           case "===":
             return c(left, st) === c(right, st);
+
+          case "!=":
+            return c(left, st) != c(right, st);
+
+          case "!==":
+            return c(left, st) !== c(right, st);
 
           case "<=":
             return c(left, st) <= c(right, st);
