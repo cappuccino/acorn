@@ -404,8 +404,8 @@
 
   // The keywords that denote values.
 
-  var _null = {keyword: "null", atomValue: null, preprocess: true}, _true = {keyword: "true", atomValue: true, preprocess: true};
-  var _false = {keyword: "false", atomValue: false, preprocess: true};
+  var _null = {keyword: "null", atomValue: null}, _true = {keyword: "true", atomValue: true};
+  var _false = {keyword: "false", atomValue: false};
 
   // Some keywords are treated as regular operators. `in` sometimes
   // (when parsing `for`) needs to be tested against specifically, so
@@ -441,6 +441,8 @@
   var _preEndif = {keyword: "endif"};
   var _preElif = {keyword: "elif"};
   var _prePragma = {keyword: "pragma"};
+  var _preError = {keyword: "error"};
+  var _preWarning = {keyword: "warning"};
 
   // Special tokens used within a macro body only
 
@@ -474,8 +476,9 @@
 
   // Map Preprocessor keyword names to token types.
 
-  var keywordTypesPreprocessor = {"define": _preDefine, "pragma": _prePragma, "ifdef": _preIfDef, "ifndef": _preIfNdef,
-                                  "undef": _preUndef, "if": _preIf, "endif": _preEndif, "else": _preElse, "elif": _preElif};
+  var keywordTypesPreprocessor = {"define": _preDefine, "pragma": _prePragma, "ifdef": _preIfDef,
+                                  "ifndef": _preIfNdef, "undef": _preUndef, "if": _preIf, "endif": _preEndif,
+                                  "else": _preElse, "elif": _preElif, "error": _preError, "warning": _preWarning};
 
   // Punctuation token types. Again, the `type` property is purely for debugging.
 
@@ -605,7 +608,7 @@
 
   // The preprocessor keywords and tokens.
 
-  var isKeywordPreprocessor = makePredicate("define undef pragma if ifdef ifndef else elif endif");
+  var isKeywordPreprocessor = makePredicate("define undef pragma if ifdef ifndef else elif endif error warning");
 
   // ## Character categories
 
@@ -673,7 +676,7 @@
     tokCommentsAfter = null;
     lastTokCommentsAfter = null;
     tokSpaces = null;
-    preprocessorState = preprocessorState_none;
+    preprocessorState = options.preprocessor ? preprocessorState_default : 0;
     skipSpace();
     firstTokenOnLine = true;
   }
@@ -1297,7 +1300,7 @@
 
   // Default state when not handling preprocessor directives
 
-  var preprocessorState_none = preprocessorState_expandMacros;
+  var preprocessorState_default = preprocessorState_expandMacros;
 
   // When expanding a macro, the tokens are stored in this array.
   // It is switched to point to macro arguments and macro body token streams
@@ -1647,7 +1650,8 @@
     raise(pos, "Expected #endif for #" + ifState.type.keyword + " at " + makeLineColumnDisplay(ifState.input, ifState.pos) + ", saw #" + saw);
   }
 
-  function parsePreIf(startPos) {
+  function parsePreIf() {
+    var startPos = tokStart;
     var type = tokType;
     var state;
     if (type === _preElif) {
@@ -1675,7 +1679,7 @@
       preprocessorState |= preprocessorState_expandMacros;
       next();
       var expr = preprocessParseExpression();
-      preprocessorState ^= preprocessorState_expandMacros;
+      preprocessorState &= ~preprocessorState_expandMacros;
       value = preprocessEvalExpression(expr);
     }
     else if (type === _preIfDef || type === _preIfNdef) {
@@ -1693,7 +1697,8 @@
       skipToNextPreDirective();
   }
 
-  function parsePreElse(startPos) {
+  function parsePreElse() {
+    var startPos = tokStart;
     next();
     expect(_eol, "#else must be followed by the token EOL");
     if (preIfStack.length > 0) {
@@ -1709,7 +1714,8 @@
       raise(startPos, "#else without matching #if");
   }
 
-  function parsePreEndif(startPos) {
+  function parsePreEndif() {
+    var startPos = tokStart;
     next();
     expect(_eol, "#endif must be followed by the token EOL");
     if (preIfStack.length > 0) {
@@ -1722,6 +1728,21 @@
     }
     else
       raise(startPos, "#endif without matching #if");
+  }
+
+  function parseErrorOrWarning(type) {
+    var startPos = tokStart;
+    // When parsing the expression, we want macro expansion.
+    preprocessorState |= preprocessorState_expandMacros;
+    next();
+    var expr = preprocessParseExpression();
+    preprocessorState &= ~preprocessorState_expandMacros;
+    expect(_eol, "#" + type.keyword + " expressions must be followed by the token EOL");
+    var message = String(preprocessEvalExpression(expr));
+    if (type === _preError)
+      raise(startPos, "Error: " + message);
+    else
+      console.warn("Warning: " + message);
   }
 
   function parsePreprocess() { // '#'
@@ -1751,19 +1772,15 @@
     else
       orphanedSpaces = null;
     // By default, macro expansion is off when processing preprocessor directives
-    preprocessorState ^= preprocessorState_expandMacros;
-    var directivePos = tokStart;
+    preprocessorState &= ~preprocessorState_expandMacros;
     next();
-    var checkForMacro = true;
     var directive = tokType;
     switch (directive) {
       case _preDefine:
         if (preSkipping)
           skipToNextPreDirective();
-        else {
+        else
           parseDefine();
-          checkForMacro = true;
-        }
         break;
 
       case _preUndef:
@@ -1775,7 +1792,6 @@
           expect(_name, "Expected a name after #undef");
           undefineMacro(name);
           eat(_eol);
-          checkForMacro = true;
         }
         break;
 
@@ -1783,23 +1799,27 @@
       case _preIfDef:
       case _preIfNdef:
       case _preElif:
-        parsePreIf(directivePos);
+        parsePreIf();
         break;
 
       case _preElse:
-        parsePreElse(directivePos);
+        parsePreElse();
         break;
 
       case _preEndif:
-        parsePreEndif(directivePos);
+        parsePreEndif();
         break;
 
       case _prePragma:
-        preprocesSkipRestOfLine();
+        skipToEOL();
         break;
 
-      case _prefix:
-        preprocesSkipRestOfLine();
+      case _preError:
+      case _preWarning:
+        if (preSkipping)
+          skipToNextPreDirective();
+        else
+          parseErrorOrWarning(directive);
         break;
 
       default:
@@ -1810,7 +1830,7 @@
     if (tokType === _eof && preIfStack.length > 0)
       raise(preIfStack[0].pos, "Unterminated #" + preIfStack[0].type.keyword + " at EOF");
 
-    preprocessorState = preprocessorState_none;
+    preprocessorState = preprocessorState_default;
 
     if (options.trackComments) {
       /*
@@ -1868,9 +1888,9 @@
       }
     }
 
-    if (checkForMacro && tokType === _name) {
+    if (tokType === _name) {
       // If the current token at this point is a name, it could be a macro because macro names
-      // are not looked up during macro definition. We have to wait until now to expand the macro
+      // are not looked up during directive handling. We have to wait until now to expand the macro
       // to ensure it is defined and that comments/spaces before it are handled correctly.
       var macro;
       if ((macro = getMacro(tokVal)) !== undefined)
@@ -1878,16 +1898,23 @@
     }
   }
 
+  function skipToEOL() {
+    for (;;) {
+      readToken();
+      if (tokType === _eol) {
+        readToken();
+        return;
+      }
+      else if (tokType === _eof)
+        return;
+    }
+  }
+
   function skipToNextPreDirective() {
     preSkipping = true;
     for (;;) {
-      switch (tokType) {
-        case _preprocess:
+      if (tokType === _preprocess || tokType === _eof)
           return;
-
-        case _eof:
-          raise(preIfStack[0].pos, "Unterminated #" + preIfStack[0].type.keyword + " at EOF");
-      }
       readToken();
     }
   }
@@ -1914,10 +1941,6 @@
       their function call parentheses are also treated as zero.
 
     We extend this syntax to allow:
-
-    - The boolean constants true and false.
-
-    - The constant null.
 
     - String literals.
 
@@ -1971,7 +1994,7 @@
         // We have to temporarily turn macro expansion off when we call parseIdent(),
         // because it does next(), and if the name is "defined", the name after that
         // should be a macro, and we don't want that to be expanded.
-        preprocessorState ^= preprocessorState_expandMacros;
+        preprocessorState &= ~preprocessorState_expandMacros;
         var node = parseIdent();
         if (isMacro(node.name)) {
           // If we have a name which is a macro name, that means it was a function
@@ -2199,7 +2222,7 @@
   function expandMacro(macro, expandedTokens, context) {
     // We actually do not want to expand macros automatically here, it is done explicitly
     var oldExpand = preprocessorState & preprocessorState_expandMacros;
-    preprocessorState ^= preprocessorState_expandMacros;
+    preprocessorState &= ~preprocessorState_expandMacros;
     pushMacro(macro, context);
     // Save the macro name as a token in case it is a function macro which has no arguments
     finishToken(_name, macro.identifier);
@@ -2877,6 +2900,9 @@
         first = false;
       }
     }
+    // If we are EOF at this point and something is left on the if stack, it was unterminated.
+    if (options.preprocess && tokType === _eof && preIfStack.length > 0)
+      raise(preIfStack[0].pos, "Unterminated #" + preIfStack[0].type.keyword + " at EOF");
     return finishNode(node, "Program");
   }
 
