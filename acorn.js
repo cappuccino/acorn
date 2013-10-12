@@ -1678,7 +1678,7 @@
       // When parsing the if expression, we want macro expansion
       preprocessorState |= preprocessorState_expandMacros;
       next();
-      var expr = preprocessParseExpression();
+      var expr = parsePreprocessExpression();
       preprocessorState &= ~preprocessorState_expandMacros;
       value = preprocessEvalExpression(expr);
     }
@@ -1735,7 +1735,7 @@
     // When parsing the expression, we want macro expansion.
     preprocessorState |= preprocessorState_expandMacros;
     next();
-    var expr = preprocessParseExpression();
+    var expr = parsePreprocessExpression();
     preprocessorState &= ~preprocessorState_expandMacros;
     expect(_eol, "#" + type.keyword + " expressions must be followed by the token EOL");
     var message = String(preprocessEvalExpression(expr));
@@ -1746,7 +1746,6 @@
   }
 
   function parsePreprocess() { // '#'
-    var wasSkipping = preSkipping;
     /*
       If there are lastTokCommentsAfter at this point, it means one of two things:
 
@@ -1758,7 +1757,7 @@
       to the next node that comes along.
     */
     if (lastTokCommentsAfter !== null) {
-      if (orphanedComments === null && (lastFinishedNode === undefined || lastFinishedNode.commentsAfter === undefined))
+      if (!preSkipping && orphanedComments === null && (lastFinishedNode === undefined || lastFinishedNode.commentsAfter === undefined))
         Array.prototype.push.apply(orphanedComments = [], lastTokCommentsAfter);
     }
     else
@@ -1766,7 +1765,7 @@
 
     // Same as above, but for spaces
     if (lastTokSpacesAfter !== null) {
-      if (orphanedSpaces === null && (lastFinishedNode === undefined || lastFinishedNode.spacesAfter === undefined))
+      if (!preSkipping && orphanedSpaces === null && (lastFinishedNode === undefined || lastFinishedNode.spacesAfter === undefined))
         Array.prototype.push.apply(orphanedSpaces = [], lastTokSpacesAfter);
     }
     else
@@ -1832,7 +1831,7 @@
 
     preprocessorState = preprocessorState_default;
 
-    if (options.trackComments) {
+    if (options.trackComments && !preSkipping) {
       /*
         If there are orphaned comments, there are a few states we could be in:
 
@@ -1862,7 +1861,7 @@
         Then set tokCommentsBefore to the lastFinishedNode's commentsAfter, so that
         the next node will pick them up as commentsBefore.
       */
-      else if (!wasSkipping && lastFinishedNode !== undefined) {
+      else if (lastFinishedNode !== undefined) {
         if (tokCommentsBefore !== null)
           Array.prototype.push.apply(lastFinishedNode.commentsAfter || (lastFinishedNode.commentsAfter = []), tokCommentsBefore);
         tokCommentsBefore = lastFinishedNode.commentsAfter;
@@ -1870,7 +1869,7 @@
     }
 
     // Same as above, but for spaces
-    if (options.trackSpaces) {
+    if (options.trackSpaces && !preSkipping) {
       if (orphanedSpaces !== null) {
         if (tokSpacesBefore !== null)
           Array.prototype.push.apply(orphanedSpaces, tokSpacesBefore);
@@ -1948,6 +1947,22 @@
     syntax restrictions mentioned above.
   */
 
+  function parsePreprocessExpression() {
+    // During preprocessor expression parsing, we don't want finishNode to do
+    // comment or space tracking, so we point it to our own specialized version.
+    var savedFinishNode = finishNode;
+    finishNode = preprocessFinishNode;
+    var expr = preprocessParseExpression();
+    finishNode = savedFinishNode;
+    return expr;
+  }
+
+  function preprocessFinishNode(node, type) {
+    node.type = type;
+    node.end = lastEnd;
+    return node;
+  }
+
   function preprocessParseExpression() {
     return preprocessParseExprOps();
   }
@@ -1969,7 +1984,7 @@
         var op = tokType;
         next();
         node.right = preprocessParseExprOp(preprocessParseMaybeUnary(), prec);
-        var exprNode = finishNode(node, (op === _logicalAND || op === _logicalOR) ? "LogicalExpression" : "BinaryExpression");
+        finishNode(node, (op === _logicalAND || op === _logicalOR) ? "LogicalExpression" : "BinaryExpression");
         return preprocessParseExprOp(node, minPrec);
       }
     }
@@ -1989,13 +2004,14 @@
   }
 
   function preprocessParseExprAtom() {
+    var node;
     switch (tokType) {
       case _name:
         // We have to temporarily turn macro expansion off when we call parseIdent(),
         // because it does next(), and if the name is "defined", the name after that
         // should be a macro, and we don't want that to be expanded.
         preprocessorState &= ~preprocessorState_expandMacros;
-        var node = parseIdent();
+        node = parseIdent();
         if (isMacro(node.name)) {
           // If we have a name which is a macro name, that means it was a function
           // macro that had no arguments, and it is treated as the literal 0.
@@ -2009,23 +2025,25 @@
           raise(node.start, "Invalid #if expression token: '" + node.name + "'");
         // We can resume macro expansion now
         preprocessorState |= preprocessorState_expandMacros;
-        return node;
+        break;
 
       case _num: case _string:
-        return parseStringNumRegExpLiteral();
+        node = parseStringNumRegExpLiteral();
+        break;
 
       case _parenL:
         var tokStart1 = tokStart;
         next();
-        var val = preprocessParseExpression();
-        val.start = tokStart1;
-        val.end = tokEnd;
+        node = preprocessParseExpression();
+        node.start = tokStart1;
+        node.end = tokEnd;
         expect(_parenR, "Expected closing ')' in #if expression");
-        return val;
+        break;
 
       default:
         raise(tokStart, "Invalid #if expression token: '" + tokVal + "'");
     }
+    return node;
   }
 
   function preprocessParseDefined(node) {
