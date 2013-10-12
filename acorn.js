@@ -2064,6 +2064,12 @@
     return walk.recursive(expr, {}, {
       UnaryExpression: function(node, st, c) {
         switch (node.operator) {
+          case "-":
+            return -c(node.argument, st);
+
+          case "+":
+            return +c(node.argument, st);
+
           case "!":
             return !c(node.argument, st);
 
