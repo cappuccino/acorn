@@ -29172,6 +29172,578 @@ test("#define lose(x) (1 + (x))\n#define foo  a,b\n#define bar(x) lose((x))\nbar
   preprocess: true
 });
 
+// 4.2 Conditional syntax
+
+// #ifdef fails if macro is undefined, succeeds if it is defined. #ifndef does the opposite.
+test("#ifdef FOO\n\"foo defined\";\n#endif\n\n#ifndef FOO\n\"foo undefined\";\n#endif\n\n#ifdef __OBJJ__\n\"objj defined\";\n#endif\n\n#ifndef __OBJJ__\n\"objj undefined\";\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 152,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 46,
+      "end": 62,
+      "expression": {
+        "type": "Literal",
+        "start": 46,
+        "end": 61,
+        "value": "foo undefined",
+        "raw": "\"foo undefined\""
+      }
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 87,
+      "end": 102,
+      "expression": {
+        "type": "Literal",
+        "start": 87,
+        "end": 101,
+        "value": "objj defined",
+        "raw": "\"objj defined\""
+      }
+    }
+  ]
+}, {
+  preprocess: true,
+  objj: true
+});
+
+// #if with arithmetic and logical OR operators. Only the last test in the expression succeeds.
+test("#if (1 + 1 === 3) || (2 - 1 === 0) || (2 * 2 === 5) || (2 / 2 === 2) || (3 % 2 === 1)\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 98,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 86,
+      "end": 91,
+      "expression": {
+        "type": "Literal",
+        "start": 86,
+        "end": 90,
+        "value": true,
+        "raw": "true"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// #if with arithmetic and logical AND operators. All of the tests in the expression succeed.
+test("#if (1 + 1 === 2) && (2 - 1 === 1) && (2 * 2 === 4) && (2 / 2 === 1) && (3 % 2 === 1)\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 98,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 86,
+      "end": 91,
+      "expression": {
+        "type": "Literal",
+        "start": 86,
+        "end": 90,
+        "value": true,
+        "raw": "true"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// #if with arithmetic and logical AND operators. All of the tests except the last in the expression succeed.
+test("#if (1 + 1 === 2) && (2 - 1 === 1) && (2 * 2 === 4) && (2 / 2 === 1) && (3 % 2 === 0)\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 98,
+  "body": []
+}, {
+  preprocess: true
+});
+
+// #if with bitwise and logical AND operators. All of the tests in the expression succeed.
+test("#if ((3 & 1) === 1) && ((3 | 0) === 3) && ((3 ^ 3) === 0) && (~1 === -2) && (1 << 2 === 4) && (-2 >> 1 === -1) && (-2 >>> 1 === 2147483647)\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 152,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 140,
+      "end": 145,
+      "expression": {
+        "type": "Literal",
+        "start": 140,
+        "end": 144,
+        "value": true,
+        "raw": "true"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// #if with comparison and logical AND operators. All of the tests in the expression succeed.
+test("#if (7 == 7) && (7 == \"7\") && (7 === 7) && (7 != 13) && (7 != \"13\") && (7 !== 13) && (13 > 7) && (13 >= 13) && (13 < 27) && (27 <= 27)\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 147,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 135,
+      "end": 140,
+      "expression": {
+        "type": "Literal",
+        "start": 135,
+        "end": 139,
+        "value": true,
+        "raw": "true"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// #if with logical ! operator.
+test("#if (1 == 0) || !(1 == 0)\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 38,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 26,
+      "end": 31,
+      "expression": {
+        "type": "Literal",
+        "start": 26,
+        "end": 30,
+        "value": true,
+        "raw": "true"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// Macros are expanded within the #if expression
+test("#define FOO(arg) arg * 2\n\n#if FOO(3) === 6\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 55,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 43,
+      "end": 48,
+      "expression": {
+        "type": "Literal",
+        "start": 43,
+        "end": 47,
+        "value": true,
+        "raw": "true"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// Identifiers that are not macros are considered to be the number zero.
+// Function macros that are used without arguments are also treated as zero.
+test("#define FOO(arg) arg * 2\n\n#if FOO === 0 && BAR === 0\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 65,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 53,
+      "end": 58,
+      "expression": {
+        "type": "Literal",
+        "start": 53,
+        "end": 57,
+        "value": true,
+        "raw": "true"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// `defined` may be used to test existence of a macro. Both 'defined FOO' and 'defined(FOO)' are accepted.
+test("#define FOO(arg) arg * 2\n\n#if defined FOO && defined(FOO)\ntrue;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 70,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 58,
+      "end": 63,
+      "expression": {
+        "type": "Literal",
+        "start": 58,
+        "end": 62,
+        "value": true,
+        "raw": "true"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// #else
+test("#define FOO(arg) arg * 2\n\n#if defined FOO\ntrue;\n#else\nfalse;\n#endif\n\n#if defined BAR\ntrue;\n#else\nfalse;\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 110,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 42,
+      "end": 47,
+      "expression": {
+        "type": "Literal",
+        "start": 42,
+        "end": 46,
+        "value": true,
+        "raw": "true"
+      }
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 97,
+      "end": 103,
+      "expression": {
+        "type": "Literal",
+        "start": 97,
+        "end": 102,
+        "value": false,
+        "raw": "false"
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// #elif
+test("#if defined FOO\n\"foo\";\n#elif defined BAR\n\"bar\";\n#else\n\"baz\";\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 67,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 54,
+      "end": 60,
+      "expression": {
+        "type": "Literal",
+        "start": 54,
+        "end": 59,
+        "value": "baz",
+        "raw": "\"baz\""
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// Comments/spaces are only tracked for sections of code that are not skipped
+test("x = 0;\n// before #if\n#if 1\n// before 1\nx = 1;\n// after 1\n#else\n// before 2\nx = 2\n// after 2\n#endif\n\n// after #if\nx;\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 115,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 0,
+      "end": 6,
+      "expression": {
+        "type": "AssignmentExpression",
+        "start": 0,
+        "end": 5,
+        "operator": "=",
+        "left": {
+          "type": "Identifier",
+          "start": 0,
+          "end": 1,
+          "name": "x"
+        },
+        "right": {
+          "type": "Literal",
+          "start": 4,
+          "end": 5,
+          "value": 0,
+          "raw": "0"
+        }
+      },
+      "commentsAfter": [
+        "// before #if",
+        "// before 1"
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 39,
+      "end": 45,
+      "commentsBefore": [
+        "// before #if",
+        "// before 1"
+      ],
+      "expression": {
+        "type": "AssignmentExpression",
+        "start": 39,
+        "end": 44,
+        "operator": "=",
+        "left": {
+          "type": "Identifier",
+          "start": 39,
+          "end": 40,
+          "name": "x"
+        },
+        "right": {
+          "type": "Literal",
+          "start": 43,
+          "end": 44,
+          "value": 1,
+          "raw": "1"
+        }
+      },
+      "commentsAfter": [
+        "// after 1",
+        "// after #if"
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 113,
+      "end": 115,
+      "commentsBefore": [
+        "// after 1",
+        "// after #if"
+      ],
+      "expression": {
+        "type": "Identifier",
+        "start": 113,
+        "end": 114,
+        "name": "x"
+      }
+    }
+  ]
+}, {
+  preprocess: true,
+  trackComments: true
+});
+
+// Complex nesting with comment tracking
+test("x = 0;\n// before #if\n#if 0\n// before 1\nx = 1;\n// after 1\n// before #elif 1\n#elif 1\n    // after #elif 1\n    // before #ifndef FOO\n    #ifndef FOO\n        // after #ifndef FOO\n        x = 7;\n        // after x = 7\n    #else\n        // after #else\n        x = 13;\n        // before inner #endif\n    #endif\n    // after inner #endif\n\n// before 2\nx = 2\n// after 2\n#endif\n\n// after outer #endif\nx;\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 392,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 0,
+      "end": 6,
+      "expression": {
+        "type": "AssignmentExpression",
+        "start": 0,
+        "end": 5,
+        "operator": "=",
+        "left": {
+          "type": "Identifier",
+          "start": 0,
+          "end": 1,
+          "name": "x"
+        },
+        "right": {
+          "type": "Literal",
+          "start": 4,
+          "end": 5,
+          "value": 0,
+          "raw": "0"
+        }
+      },
+      "commentsAfter": [
+        "// before #if",
+        "// after #elif 1",
+        "// before #ifndef FOO",
+        "// after #ifndef FOO"
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 183,
+      "end": 189,
+      "commentsBefore": [
+        "// before #if",
+        "// after #elif 1",
+        "// before #ifndef FOO",
+        "// after #ifndef FOO"
+      ],
+      "expression": {
+        "type": "AssignmentExpression",
+        "start": 183,
+        "end": 188,
+        "operator": "=",
+        "left": {
+          "type": "Identifier",
+          "start": 183,
+          "end": 184,
+          "name": "x"
+        },
+        "right": {
+          "type": "Literal",
+          "start": 187,
+          "end": 188,
+          "value": 7,
+          "raw": "7"
+        }
+      },
+      "commentsAfter": [
+        "// after x = 7",
+        "// after inner #endif",
+        "// before 2"
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 343,
+      "end": 348,
+      "commentsBefore": [
+        "// after x = 7",
+        "// after inner #endif",
+        "// before 2"
+      ],
+      "expression": {
+        "type": "AssignmentExpression",
+        "start": 343,
+        "end": 348,
+        "operator": "=",
+        "left": {
+          "type": "Identifier",
+          "start": 343,
+          "end": 344,
+          "name": "x"
+        },
+        "right": {
+          "type": "Literal",
+          "start": 347,
+          "end": 348,
+          "value": 2,
+          "raw": "2"
+        }
+      },
+      "commentsAfter": [
+        "// after 2",
+        "// after outer #endif"
+      ]
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 390,
+      "end": 392,
+      "commentsBefore": [
+        "// after 2",
+        "// after outer #endif"
+      ],
+      "expression": {
+        "type": "Identifier",
+        "start": 390,
+        "end": 391,
+        "name": "x"
+      }
+    }
+  ]
+}, {
+  preprocess: true,
+  trackComments: true
+});
+
+// Conditional nesting failures
+testFail("#if 0\nx = 0;\n",
+         "Unterminated #if at EOF (1:1)");
+
+testFail("#if 0\nx = 0;\n#if 1\nx = 1;\n#endif\n",
+         "Unterminated #if at EOF (1:1)");
+
+testFail("#if 0\nx = 0;\n#endif\n#endif\n",
+         "#endif without matching #if (4:1)");
+
+testFail("#if 0\nx = 0;\n#else\nx = 1;\n#else\nx = 2;\n#endif\n",
+         "Expected #endif for #if at (1:1), saw #else (5:1)");
+
+testFail("#if 0\nx = 0;\n#else\nx = 1;\n#elif 1\nx = 2;\n#endif\n",
+         "Expected #endif for #if at (1:1), saw #elif (5:1)");
+
+// 5. Diagnostics
+
+// #error
+testFail("#error \"This is \" + \"a test\"\nx = 7;\n",
+         "Error: This is a test (1:1)");
+
+// #warning
+test("#ifndef FOO\n#warning \"FOO is not defined!\"\n#endif\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 49,
+  "body": []
+}, {
+  preprocess: true
+});
+
+// 7. Pragmas
+
+// #pragma is accepted but ignored
+test("#pragma mark -\nx = 7;\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 21,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 15,
+      "end": 21,
+      "expression": {
+        "type": "AssignmentExpression",
+        "start": 15,
+        "end": 20,
+        "operator": "=",
+        "left": {
+          "type": "Identifier",
+          "start": 15,
+          "end": 16,
+          "name": "x"
+        },
+        "right": {
+          "type": "Literal",
+          "start": 19,
+          "end": 20,
+          "value": 7,
+          "raw": "7"
+        }
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
 // Failure tests
 
 testFail("{",
