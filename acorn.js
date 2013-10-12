@@ -676,7 +676,7 @@
     tokCommentsAfter = null;
     lastTokCommentsAfter = null;
     tokSpaces = null;
-    preprocessorState = options.preprocessor ? preprocessorState_default : 0;
+    preprocessorState = options.preprocess ? preprocessorState_default : 0;
     skipSpace();
     firstTokenOnLine = true;
   }
