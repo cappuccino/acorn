@@ -33,7 +33,7 @@
 })(this, function(exports, walk) {
   "use strict";
 
-  exports.version = "0.3.3-objj-3";
+  exports.version = "1.0.0";
 
   // The main exported interface (under `self.acorn` when in the
   // browser) is a `parse` function that takes a code string and
@@ -141,7 +141,7 @@
     // in one of two forms:
     //    macro
     //    macro=body
-    macros: [],
+    macros: null,
     // Turn off lineNoInErrorMessage to exclude line number in error messages
     // Needs to be on to run test cases
     lineNoInErrorMessage: true
@@ -1394,6 +1394,8 @@
     preIfStack = [];
     preSkipping = false;
     preprocessorGetToken = exports.tokenize(inpt, opts);
+    if (options.macros === null)
+      options.macros = [];
     addPredefinedMacros();
     defineMacros(options.macros, false);
   }
@@ -1627,7 +1629,6 @@
           break;
 
         case _eol:
-          next();
           break scanBody;
 
         case _eof:
@@ -1669,17 +1670,12 @@
       preIfStack.push(state);
     }
     if (preSkipping) {
-      next();
-      skipToNextPreDirective();
+      skipToEOL();
       return;
     }
     var value;
     if (type === _preIf || type === _preElif) {
-      // When parsing the if expression, we want macro expansion
-      preprocessorState |= preprocessorState_expandMacros;
-      next();
       var expr = parsePreprocessExpression();
-      preprocessorState &= ~preprocessorState_expandMacros;
       value = preprocessEvalExpression(expr);
     }
     else if (type === _preIfDef || type === _preIfNdef) {
@@ -1691,24 +1687,22 @@
         value = !value;
       next();
     }
-    expect(_eol, "#" + type.keyword + " expressions must be followed by the token EOL");
+    if (tokType !== _eol)
+      raise(startPos, "#" + type.keyword + " expressions must be followed by the token EOL");
     preSkipping = state.skipping = !value;
-    if (preSkipping)
-      skipToNextPreDirective();
   }
 
   function parsePreElse() {
     var startPos = tokStart;
     next();
-    expect(_eol, "#else must be followed by the token EOL");
+    if (tokType !== _eol)
+      raise(startPos, "#else must be followed by the token EOL");
     if (preIfStack.length > 0) {
       var state = preIfStack.last();
       if (state.phase === preElse)
         expectedPreEndif(startPos, state, "else");
       state.phase = preElse;
       preSkipping = state.skipping = !state.skipping;
-      if (preSkipping)
-        skipToNextPreDirective();
     }
     else
       raise(startPos, "#else without matching #if");
@@ -1717,27 +1711,23 @@
   function parsePreEndif() {
     var startPos = tokStart;
     next();
-    expect(_eol, "#endif must be followed by the token EOL");
+    if (tokType !== _eol)
+      raise(startPos, "#endif must be followed by the token EOL");
     if (preIfStack.length > 0) {
       preIfStack.pop();
       // If this ended a nested #if, we resume the skipping state
       // of the next #if up the stack.
       preSkipping = preIfStack.length > 0 ? preIfStack.last().skipping : false;
-      if (preSkipping)
-        skipToNextPreDirective();
     }
     else
       raise(startPos, "#endif without matching #if");
   }
 
-  function parseErrorOrWarning(type) {
+  function parsePreDiagnostic(type) {
     var startPos = tokStart;
-    // When parsing the expression, we want macro expansion.
-    preprocessorState |= preprocessorState_expandMacros;
-    next();
     var expr = parsePreprocessExpression();
-    preprocessorState &= ~preprocessorState_expandMacros;
-    expect(_eol, "#" + type.keyword + " expressions must be followed by the token EOL");
+    if (tokType !== _eol)
+      raise(startPos, "#" + type.keyword + " expressions must be followed by the token EOL");
     var message = String(preprocessEvalExpression(expr));
     if (type === _preError)
       raise(startPos, "Error: " + message);
@@ -1776,21 +1766,16 @@
     var directive = tokType;
     switch (directive) {
       case _preDefine:
-        if (preSkipping)
-          skipToNextPreDirective();
-        else
+        if (!preSkipping)
           parseDefine();
         break;
 
       case _preUndef:
-        if (preSkipping)
-          skipToNextPreDirective();
-        else {
+        if (!preSkipping) {
           next();
           var name = tokVal;
           expect(_name, "Expected a name after #undef");
           undefineMacro(name);
-          eat(_eol);
         }
         break;
 
@@ -1815,10 +1800,8 @@
 
       case _preError:
       case _preWarning:
-        if (preSkipping)
-          skipToNextPreDirective();
-        else
-          parseErrorOrWarning(directive);
+        if (!preSkipping)
+          parsePreDiagnostic(directive);
         break;
 
       default:
@@ -1830,6 +1813,13 @@
       raise(preIfStack[0].pos, "Unterminated #" + preIfStack[0].type.keyword + " at EOF");
 
     preprocessorState = preprocessorState_default;
+
+    // Eat the EOL that should terminate every directive. We have to wait until this point
+    // to do it so that the preprocessorState will allow a directive on the next line to be recognized.
+    next();
+
+    if (preSkipping)
+      skipToNextPreDirective();
 
     if (options.trackComments && !preSkipping) {
       /*
@@ -1900,11 +1890,7 @@
   function skipToEOL() {
     for (;;) {
       readToken();
-      if (tokType === _eol) {
-        readToken();
-        return;
-      }
-      else if (tokType === _eof)
+      if (tokType === _eol || tokType === _eof)
         return;
     }
   }
@@ -1948,12 +1934,18 @@
   */
 
   function parsePreprocessExpression() {
+    // When parsing the expression, we want macro expansion
+    preprocessorState |= preprocessorState_expandMacros;
     // During preprocessor expression parsing, we don't want finishNode to do
     // comment or space tracking, so we point it to our own specialized version.
     var savedFinishNode = finishNode;
     finishNode = preprocessFinishNode;
+
+    next();
     var expr = preprocessParseExpression();
+
     finishNode = savedFinishNode;
+    preprocessorState &= ~preprocessorState_expandMacros;
     return expr;
   }
 

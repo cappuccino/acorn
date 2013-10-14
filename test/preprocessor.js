@@ -328,3 +328,101 @@ bar(foo);
 #define bar(x) lose((x))
 bar(foo);
 // 1 + (a, b);
+
+/*
+    4.2 Conditional Syntax
+*/
+
+// #ifdef fails if macro is undefined, succeeds if it is defined. #ifndef does the opposite.
+#ifdef FOO
+"foo defined";
+#endif
+
+#ifndef FOO
+"foo undefined";
+#endif
+
+#ifdef __OBJJ__
+"objj defined";
+#endif
+
+#ifndef __OBJJ__
+"objj undefined";
+#endif
+
+// #if with arithmetic and logical OR operators. Only the last test in the expression succeeds.
+#if (1 + 1 === 3) || (2 - 1 === 0) || (2 * 2 === 5) || (2 / 2 === 2) || (3 % 2 === 1)
+"success";
+#else
+"failure";
+#endif
+
+// #if with arithmetic and logical AND operators. All of the tests in the expression succeed.
+#if (1 + 1 === 2) && (2 - 1 === 1) && (2 * 2 === 4) && (2 / 2 === 1) && (3 % 2 === 1)
+"success";
+#else
+"failure";
+#endif
+
+// #if with arithmetic and logical AND operators. All of the tests except the last in the expression succeed.
+#if (1 + 1 === 2) && (2 - 1 === 1) && (2 * 2 === 4) && (2 / 2 === 1) && (3 % 2 === 0)
+"failure";
+#else
+"success";
+#endif
+
+// #if with bitwise and logical AND operators. All of the tests in the expression succeed.
+#if ((3 & 1) === 1) && ((3 | 0) === 3) && ((3 ^ 3) === 0) && (~1 === -2) && (1 << 2 === 4) && (-2 >> 1 === -1) && (-2 >>> 1 === 2147483647)
+"success";
+#else
+"failure";
+#endif
+
+// #if with comparison and logical AND operators. All of the tests in the expression succeed.
+#if (7 == 7) && (7 == "7") && (7 === 7) && (7 != 13) && (7 != "13") && (7 !== 13) && (13 > 7) && (13 >= 13) && (13 < 27) && (27 <= 27)
+"success";
+#else
+"failure";
+#endif
+
+// #if with logical ! operator.
+#if (1 == 0) || !(1 == 0)
+"success";
+#else
+"failure";
+#endif
+
+// Macros are expanded within the #if expression
+#define EXPAND(arg) arg * 2
+
+#if EXPAND(3) === 6
+"success";
+#else
+"failure";
+#endif
+
+// Identifiers that are not macros are considered to be the number zero.
+// Function macros that are used without arguments are also treated as zero.
+#define FOO2(arg) arg * 2
+
+#if FOO2 === 0 && BAR2 === 0
+"success";
+#else
+"failure";
+#endif
+
+// `defined` may be used to test existence of a macro. Both 'defined FOO' and 'defined(FOO)' are accepted.
+#if defined FOO && defined(FOO)
+"success"
+#else
+"failure"
+#endif
+
+// #elif
+#if defined FOO7
+"foo";
+#elif defined BAR7
+"bar";
+#else
+"baz";
+#endif

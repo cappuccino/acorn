@@ -16,7 +16,7 @@ function help(status) {
   console.log("--trackComments     Attaches an array of comments found before and after each expression node.");
   console.log("--trackSpaces       Attaches an array of whitespaces found before and after each expression node.");
   console.log("--locations         Attaches a \"loc\" object to each node with \"start\" and \"end\" subobjects,");
-  console.log("                    each of which contains the line and column numbers.");
+  console.log("                    each of which contains the one-based line and zero-based column numbers.");
   console.log("-Dmacro[([param, ...])][=definition]]");
   console.log("                    Defines a macro. A name with no parameters and no definition will be defined");
   console.log("                    with the value 1. To be safe from shell expansion, the values on either side");
