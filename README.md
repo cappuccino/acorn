@@ -142,9 +142,9 @@ file in every node’s "loc" object. Note that the contents of this option are n
 
 - **macros**: When `preprocess` is `true`, you may pass an array of macro definitions in this option, which will create predefined macros with the given names. Definitions may be in one of three forms:
 
-    1. name
-    2. name=definition
-    3. name(parameter, ...)=definition
+    - name
+    - name=definition
+    - name(parameter, ...)=definition
 
     The first form predefines `name` as a macro with the value `1`. The second form predefines the object macro `name`, and the contents of `definition` are tokenized and processed as if they appeared in a `#define` directive. The third form is similar to the second form, but predefines the function macro `name` with the given parameters and definition. *Default*: `null`
 
