@@ -233,6 +233,11 @@ variadic2(var x = 1, y = 2, z = 3);
 variadic3("(%d, %d)", x, y);
 // console.log("(%d, %d)", x, y);
 
+// ## between a comma and the variadic parameter name allows the variadic args to be omitted.
+#define emptyVariadic(format, args...) console.log(format, ##args)
+emptyVariadic("(%d, %d)", x, y);
+emptyVariadic("(%d, %d)");
+
 /*
     3.8 Undefining and Redefining Macros
 

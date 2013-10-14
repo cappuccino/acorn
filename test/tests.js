@@ -28664,6 +28664,222 @@ test("#define variadic3(args...) console.log(args);\nvariadic3(\"(%d, %d)\", x, 
   preprocess: true
 });
 
+// ## between a comma and the variadic parameter name allows the variadic args to be omitted.
+test("#define emptyVariadic(format, args...) console.log(format, ##args)\nemptyVariadic(\"(%d, %d)\", x, y);\nemptyVariadic(\"(%d, %d)\");\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 126,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 39,
+      "end": 126,
+      "expression": {
+        "type": "CallExpression",
+        "start": 39,
+        "end": 66,
+        "callee": {
+          "type": "MemberExpression",
+          "start": 39,
+          "end": 50,
+          "object": {
+            "type": "Identifier",
+            "start": 39,
+            "end": 46,
+            "name": "console"
+          },
+          "property": {
+            "type": "Identifier",
+            "start": 47,
+            "end": 50,
+            "name": "log"
+          },
+          "computed": false
+        },
+        "arguments": [
+          {
+            "type": "Literal",
+            "start": 81,
+            "end": 91,
+            "value": "(%d, %d)",
+            "raw": "\"(%d, %d)\""
+          },
+          {
+            "type": "Identifier",
+            "start": 93,
+            "end": 94,
+            "name": "x"
+          },
+          {
+            "type": "Identifier",
+            "start": 96,
+            "end": 97,
+            "name": "y"
+          }
+        ]
+      }
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 39,
+      "end": 126,
+      "expression": {
+        "type": "CallExpression",
+        "start": 39,
+        "end": 66,
+        "callee": {
+          "type": "MemberExpression",
+          "start": 39,
+          "end": 50,
+          "object": {
+            "type": "Identifier",
+            "start": 39,
+            "end": 46,
+            "name": "console"
+          },
+          "property": {
+            "type": "Identifier",
+            "start": 47,
+            "end": 50,
+            "name": "log"
+          },
+          "computed": false
+        },
+        "arguments": [
+          {
+            "type": "Literal",
+            "start": 114,
+            "end": 124,
+            "value": "(%d, %d)",
+            "raw": "\"(%d, %d)\""
+          }
+        ]
+      }
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// Using a predefined macro to change the definition of another variadic macro
+test("#if DEBUG\n#define LOG(format, args...) console.log(format, ##args)\n#else\n#define LOG(...)\n#endif\n\nLOG(\"(%d, %d)\", x, y);\nLOG(\"This is awesome!\");\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 145,
+  "body": [
+    {
+      "type": "EmptyStatement",
+      "start": 119,
+      "end": 145
+    },
+    {
+      "type": "EmptyStatement",
+      "start": 144,
+      "end": 145
+    }
+  ]
+}, {
+  preprocess: true
+});
+
+// Using a predefined macro to change the definition of another variadic macro
+test("#if DEBUG\n#define LOG(format, args...) console.log(format, ##args)\n#else\n#define LOG(...)\n#endif\n\nLOG(\"(%d, %d)\", x, y);\nLOG(\"This is awesome!\");\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 145,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 39,
+      "end": 145,
+      "expression": {
+        "type": "CallExpression",
+        "start": 39,
+        "end": 66,
+        "callee": {
+          "type": "MemberExpression",
+          "start": 39,
+          "end": 50,
+          "object": {
+            "type": "Identifier",
+            "start": 39,
+            "end": 46,
+            "name": "console"
+          },
+          "property": {
+            "type": "Identifier",
+            "start": 47,
+            "end": 50,
+            "name": "log"
+          },
+          "computed": false
+        },
+        "arguments": [
+          {
+            "type": "Literal",
+            "start": 102,
+            "end": 112,
+            "value": "(%d, %d)",
+            "raw": "\"(%d, %d)\""
+          },
+          {
+            "type": "Identifier",
+            "start": 114,
+            "end": 115,
+            "name": "x"
+          },
+          {
+            "type": "Identifier",
+            "start": 117,
+            "end": 118,
+            "name": "y"
+          }
+        ]
+      }
+    },
+    {
+      "type": "ExpressionStatement",
+      "start": 39,
+      "end": 145,
+      "expression": {
+        "type": "CallExpression",
+        "start": 39,
+        "end": 66,
+        "callee": {
+          "type": "MemberExpression",
+          "start": 39,
+          "end": 50,
+          "object": {
+            "type": "Identifier",
+            "start": 39,
+            "end": 46,
+            "name": "console"
+          },
+          "property": {
+            "type": "Identifier",
+            "start": 47,
+            "end": 50,
+            "name": "log"
+          },
+          "computed": false
+        },
+        "arguments": [
+          {
+            "type": "Literal",
+            "start": 125,
+            "end": 143,
+            "value": "This is awesome!",
+            "raw": "\"This is awesome!\""
+          }
+        ]
+      }
+    }
+  ]
+}, {
+  preprocess: true,
+  macros: ["DEBUG"]
+});
+
 // 3.7.1 Standard Predefined Macros
 
 // Only __OBJJ__ is defined
