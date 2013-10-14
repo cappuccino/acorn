@@ -1363,7 +1363,7 @@
   // A macro object. Note that a macro can have no parameters but still
   // be a function macro if it is defined with an empty parameter list.
 
-  var Macro = exports.Macro = function Macro(ident, parameters, parameterMap, isFunction, isVariadic, tokens) {
+  var Macro = exports.Macro = function Macro(ident, parameters, parameterMap, isFunction, isVariadic, variadicArgsName, tokens) {
     this.identifier = ident;
     // Tell the parameter its index, so when we lookup a parameter by name, we know its positional index
     for (var i = 0; i < parameters.length; ++i)
@@ -1372,6 +1372,7 @@
     this.parameterMap = parameterMap;
     this.isFunction = isFunction;
     this.isVariadic = isVariadic;
+    this.variadicArgsName = variadicArgsName;
     this.tokens = tokens;
   }
 
@@ -1579,40 +1580,54 @@
     var parameterMap = Object.create(null);  // Don't inherit from Object
     var isFunction = false;
     var isVariadic = false;
+    var variadicArgsName = "__VA_ARGS__";
     // '(' Must follow directly after identifier to be a valid macro with parameters
     if (tokInput.charCodeAt(nameEnd) === 40) { // '('
       // Read macro parameters
       expect(_parenL);
       isFunction = true;
       var expectComma = false;
+      scanParameters:
       while (tokType !== _parenR) {
         if (expectComma) {
           expect(_comma, "Expected ',' between macro parameters");
           expectComma = false;
         }
-        else if (tokType === _name) {
-          if (tokVal === "__VA_ARGS__")
-            raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
-
-          var parameter = {
-            identifier: tokVal,
-            expand: false,
-            stringify: false
-          };
-          parameters.push(parameter);
-          parameterMap[parameter.identifier] = parameter;
-          next();
-          expectComma = true;
-        }
-        else if (tokType === _dotdotdot) {
-          isVariadic = true;
-          next();
-          if (tokType !== _parenR)
-            raise(tokStart, "Expect ')' after ... in a macro parameter list");
-          break;
-        }
         else {
-          raise(tokStart, "Unexpected token in macro parameters");
+          switch (tokType) {
+            case _name:
+              var argName = tokVal;
+              if (argName === "__VA_ARGS__")
+                raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
+              if (parameterMap[argName] !== undefined)
+                raise(tokStart, "'" + argName + "' has already been used as a parameter name");
+              next();
+              // If a name is followed by ..., it means the variadic args are named
+              if (tokType === _dotdotdot)
+                variadicArgsName = argName;
+                // Note that we do NOT break here so that we fall through to the _dotdotdot case
+              else {
+                var parameter = {
+                  identifier: argName,
+                  expand: false,
+                  stringify: false
+                };
+                parameters.push(parameter);
+                parameterMap[parameter.identifier] = parameter;
+                expectComma = true;
+                break;
+              }
+
+            case _dotdotdot:
+              isVariadic = true;
+              next();
+              if (tokType !== _parenR)
+                raise(tokStart, "Expect ')' after ... in a macro parameter list");
+              break scanParameters;
+
+            default:
+              raise(tokStart, "Unexpected token in macro parameters");
+          }
         }
       }
       next();
@@ -1624,7 +1639,11 @@
       switch (tokType) {
         case _name:
         case _stringifiedName:
-          if (!isVariadic && tokVal === "__VA_ARGS__")
+          if (isVariadic) {
+            if (variadicArgsName !== "__VA_ARGS__" && tokVal === "__VA_ARGS__")
+              raise(tokStart, "__VA_ARGS__ may not be used when there are named variadic parameters");
+          }
+          else if (tokVal === "__VA_ARGS__")
             raise(tokStart, "__VA_ARGS__ may only be used within the body of a variadic macro");
           break;
 
@@ -1644,7 +1663,7 @@
       else if (tokens.last().type === _preTokenPaste)
         raise(tokens.last().start, "## may not be at the end of a macro");
     }
-    addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, tokens));
+    addMacro(new Macro(name, parameters, parameterMap, isFunction, isVariadic, variadicArgsName, tokens));
   }
 
   function expectedPreEndif(pos, ifState, saw) {
@@ -2524,8 +2543,8 @@
             continue;
           }
         }
-        if (token.type === _name && token.value === "__VA_ARGS__") {
-          // __VA_ARGS__ receives all of the args after the last formal parameter declared
+        if (macro.isVariadic && token.type === _name && token.value === macro.variadicArgsName) {
+          // Variadic arg receives all of the args after the last formal parameter declared
           for (var vi = macro.parameters.length; vi < args.length; ++vi) {
             Array.prototype.push.apply(bodyTokens, expandMacroArgument(args[vi]));
             if (vi < args.length - 1)

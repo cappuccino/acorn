@@ -28599,6 +28599,71 @@ test("#define variadic2(...)  __VA_ARGS__\nvariadic2();\nvariadic2(var x = 1, y 
   preprocess: true
 });
 
+// The variadic parameters may be named
+test("#define variadic3(args...) console.log(args);\nvariadic3(\"(%d, %d)\", x, y);\n", {
+  "type": "Program",
+  "start": 0,
+  "end": 74,
+  "body": [
+    {
+      "type": "ExpressionStatement",
+      "start": 27,
+      "end": 45,
+      "expression": {
+        "type": "CallExpression",
+        "start": 27,
+        "end": 44,
+        "callee": {
+          "type": "MemberExpression",
+          "start": 27,
+          "end": 38,
+          "object": {
+            "type": "Identifier",
+            "start": 27,
+            "end": 34,
+            "name": "console"
+          },
+          "property": {
+            "type": "Identifier",
+            "start": 35,
+            "end": 38,
+            "name": "log"
+          },
+          "computed": false
+        },
+        "arguments": [
+          {
+            "type": "Literal",
+            "start": 56,
+            "end": 66,
+            "value": "(%d, %d)",
+            "raw": "\"(%d, %d)\""
+          },
+          {
+            "type": "Identifier",
+            "start": 68,
+            "end": 69,
+            "name": "x"
+          },
+          {
+            "type": "Identifier",
+            "start": 71,
+            "end": 72,
+            "name": "y"
+          }
+        ]
+      }
+    },
+    {
+      "type": "EmptyStatement",
+      "start": 73,
+      "end": 74
+    }
+  ]
+}, {
+  preprocess: true
+});
+
 // 3.7.1 Standard Predefined Macros
 
 // Only __OBJJ__ is defined

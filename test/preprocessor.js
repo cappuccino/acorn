@@ -228,6 +228,11 @@ variadic2(var x = 1, y = 2, z = 3);
 //     y = 2,
 //     z = 3;
 
+// The variadic parameters may be named
+#define variadic3(args...) console.log(args);
+variadic3("(%d, %d)", x, y);
+// console.log("(%d, %d)", x, y);
+
 /*
     3.8 Undefining and Redefining Macros
 
