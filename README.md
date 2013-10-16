@@ -12,7 +12,7 @@ objj-acorn is an extension of the [acorn][acorn] JavaScript parser by Marijn Hav
 
 ## Invoking
 
-acorn can be invoked in several ways.
+Acorn can be invoked in several ways.
 
 - From a node script.
 - From the command line.
@@ -179,6 +179,14 @@ For the supported features mentioned above, the acorn preprocessor implementatio
 - Preprocessor directives may not be used within macro arguments.
 
 - The only predefined macro is `__OBJJ__`. If the `objj` option is `true`, this macro is defined with the value `1`. If `objj` is `false`, the macro is undefined.
+
+- If you use regular expression literals in a macro, to be safe you should enclose them in parentheses to be sure they are parsed as regular expressions. This is due to an ambiguity in the ECMAScript grammar. For example, you would do this:
+
+    ```objj
+    #define isFoo(arg)  (/foo/).test(arg)
+
+    if (isFoo("bar"))
+    ```
 
 ## Errors
 

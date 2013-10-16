@@ -1,9 +1,9 @@
 {
     "name": "objj-acorn",
     "description": "JavaScript (ECMAScript) and Objective-J parser with preprocessor.",
-    "homepage": "http://github.com/mrcarlberg/acorn",
+    "homepage": "https://github.com/cappuccino/acorn",
     "main": "acorn.js",
-    "version": "1.0.0",
+    "version": "0.5.0",
     "engines": {"node": ">=0.8.0"},
     "contributors": [
         {
@@ -24,9 +24,9 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/mrcarlberg/acorn.git"
+        "url": "https://github.com/cappuccino/acorn.git"
     },
-    "bugs": "https://github.com/mrcarlberg/acorn/issues",
+    "bugs": "https://github.com/cappuccino/acorn/issues",
     "licenses": [
         {
             "type": "MIT",
