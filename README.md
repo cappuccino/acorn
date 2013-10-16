@@ -1,4 +1,3 @@
-
 # Objective-J Acorn
 
 [acorn]: http://marijnhaverbeke.nl/acorn/
@@ -14,7 +13,7 @@ objj-acorn is an extension of the [acorn][acorn] JavaScript parser by Marijn Hav
 
 Acorn can be invoked in several ways.
 
-- From a node script.
+- From a Node script.
 - From the command line.
 - From a browser script.
 
@@ -45,7 +44,7 @@ var fs = require('fs'),
 try
 {
     var options = {trackComments: true},
-        code = fs.readFileSync(pathToFile, "utf8"),
+        code = fs.readFileSync(pathToFile, 'utf8'),
         ast = acorn.parse(code, options);
 }
 catch(e)
@@ -122,6 +121,7 @@ the whitespace in between. *Default*: `false`
 - **locations**: When `true`, each node has a "loc" object attached with "start" and "end" subobjects, each of which contains the one-based line and zero-based column numbers in `{line, column}` form. *Default*: `false`
 
 - **onComment**: If a function is passed for this option, whenever a comment is encountered the function will be called with the following parameters:
+
     - **block**: `true` if the comment is a block comment, false if it is a line comment.
     - **text**: The content of the comment.
     - **start**: Character offset of the start of the comment.

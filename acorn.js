@@ -13,11 +13,11 @@
 //
 // [ghbt]: https://github.com/marijnh/acorn/issues
 //
-// Objective-J extensions made by Martin Carlberg
+// Objective-J extensions written by Martin Carlberg. Preprocessor written by Aparajita Fishman.
 //
-// Git repositories for Acorn with Objective-J extension is available at
+// Git repository for Acorn with Objective-J and preprocessor support is available at
 //
-//     https://github.com/mrcarlberg/acorn.git
+//     https://github.com/cappuccino/acorn.git
 //
 // This file defines the main parser interface. The library also comes
 // with a [error-tolerant parser][dammit] and an
@@ -130,7 +130,7 @@
     // toplevel forms of the parsed file to the `Program` (top) node
     // of an existing parse tree.
     program: null,
-    // When `location` is on, you can pass this to record the source
+    // When `locations` is on, you can pass this to record the source
     // file in every node's `loc` object.
     sourceFile: null,
     // Turn on objj to allow Objective-J syntax
