@@ -4,11 +4,13 @@ var path = require("path");
 var fs = require("fs");
 var acorn = require("../acorn.js");
 
-var infile, parsed, options = {}, silent = false, compact = false;
+var infile, parsed, code = "", options = {}, silent = false, compact = false, useStdin = !process.stdin.isTTY;
 
 function help(status) {
-  console.log("usage: " + path.basename(process.argv[1]) + " [options] file\n");
-  console.log("Parses <file> and outputs the parsed AST as a stringified JSON object.\n");
+  var name = path.basename(process.argv[1]);
+  console.log("usage: " + name + " [options] file\n");
+  console.log("Parses <file> and outputs the parsed AST as a stringified JSON object.");
+  console.log("If <file> is '-', reads from stdin. You may also pipe or redirect into " + name + " and omit <file>.\n");
   console.log("Options:");
   console.log("--ecma3|--ecma5     Sets the ECMAScript version to parse. Default is version 5.");
   console.log("--strictSemicolons  Prevents the parser from doing automatic semicolon insertion.");
@@ -26,7 +28,8 @@ function help(status) {
   console.log("--no-preprocess     Turns off the preprocessor. Results in ~30% speed increase.");
   console.log("--compact           No whitespace is used in the AST output.");
   console.log("--silent            Do not output the AST, just return the exit status.");
-  console.log("--help              Print this usage information and quit.");
+  console.log("--version           Print the current version and exit.");
+  console.log("--help              Print this usage information and exit.");
   process.exit(status);
 }
 
@@ -41,23 +44,50 @@ for (var i = 2; i < process.argv.length; ++i) {
   else if (arg.slice(0, 2) == "-D") (options.macros || (options.macros = [])).push(arg.slice(2));
   else if (arg == "--no-preprocess") options.preprocess = false;
   else if (arg == "--no-objj") options.objj = false;
-  else if (arg == "--silent") silent = true;
   else if (arg == "--compact") compact = true;
-  else if (arg == "--help") help(0);
-  else if (arg[0] == "-") help(1);
-  else infile = arg;
+  else if (arg == "--silent") silent = true;
+  else if (arg == "--version") {
+    console.log(acorn.version);
+    process.exit(0);
+  }
+  else if (arg.indexOf("--") === 0) help(0);
+  else {
+    if (arg == "-")
+      useStdin = true;
+    else
+      infile = arg;
+    break;
+  }
 }
 
-if (!infile) help(1);
+if (!useStdin && !infile) help(1);
 
-try {
+if (useStdin) {
+  process.stdin.resume();
+  process.stdin.setEncoding('utf8');
+
+  process.stdin.on('data', function(chunk) {
+    code += chunk;
+  });
+
+  process.stdin.on('end', function() {
+    main();
+  });
+}
+else {
   options.sourceFile = path.resolve(infile);
-  var code = fs.readFileSync(infile, "utf8");
-  parsed = acorn.parse(code, options);
-} catch(e) {
-  console.log(e.message);
-  process.exit(1);
+  code = fs.readFileSync(infile, "utf8");
+  main();
 }
 
-if (!silent)
-  console.log(JSON.stringify(parsed, null, compact ? null : 2));
+function main() {
+  try {
+    parsed = acorn.parse(code, options);
+  } catch(e) {
+    console.log(e.message);
+    process.exit(1);
+  }
+
+  if (!silent)
+    console.log(JSON.stringify(parsed, null, compact ? null : 2));
+}
