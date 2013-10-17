@@ -150,7 +150,7 @@ file in every node’s "loc" object. Note that the contents of this option are n
 
 - **lineNoInErrorMessage**: When `true`, error messages are suffixed with `(line:column)`, where `line` is the one-based line number on which the error occurred, and `column` is the zero-based column within that line. *Default*: `true`
 
-## <a name="preprocessor">Preprocessor</a>
+## Preprocessor
 
 When the `preprocess` option is `true` (the default), acorn recognizes preprocessor directives defined in the [GNU C 4.0 Preprocessor User Guide](http://gcc.gnu.org/onlinedocs/gcc-4.8.1/cpp/index.html#Top). Acorn offers a **complete** implementation of the following preprocessor features:
 
