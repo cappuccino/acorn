@@ -716,7 +716,7 @@
       options.onComment(true, tokInput.slice(start + 2, end), start, tokPos,
                         startLoc, options.locations && new line_loc_t);
     if (options.trackComments)
-      (tokComments || (tokComments = [])).push(tokInput.slice(lastIsNewlinePos !== undefined && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
+      (tokComments || (tokComments = [])).push(tokInput.slice(lastIsNewlinePos != null && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
   }
 
   function skipLineComment(lastIsNewlinePos) {
@@ -731,7 +731,7 @@
       options.onComment(false, tokInput.slice(start + 2, tokPos), start, tokPos,
                         startLoc, options.locations && new line_loc_t);
     if (options.trackComments)
-      (tokComments || (tokComments = [])).push(tokInput.slice(lastIsNewlinePos !== undefined && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
+      (tokComments || (tokComments = [])).push(tokInput.slice(lastIsNewlinePos != null && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
   }
 
   // Called at the start of the parse and after every token. Skips
@@ -1274,7 +1274,7 @@
         }
         else if (!preSkipping && (preprocessorState & preprocessorState_expandMacros) !== 0) {
           var macro;
-          if ((macro = getMacro(word)) !== undefined)
+          if ((macro = getMacro(word)) != null)
             return expandMacro(macro, tokenStream);
         }
       }
@@ -1394,7 +1394,7 @@
     preIfStack = [];
     preSkipping = false;
     preprocessorGetToken = exports.tokenize(inpt, opts);
-    if (options.macros === null)
+    if (options.macros == null)
       options.macros = [];
     addPredefinedMacros();
     defineMacros(options.macros, false);
@@ -1409,7 +1409,7 @@
       if (definition) {
         if (typeof(definition) === "function") {
           definition = definition();
-          if (definition === undefined)
+          if (definition == null)
             continue;
         }
         definitions.push(name + "=" + definition);
@@ -1461,7 +1461,7 @@
 
   function addMacro(macro) {
     var old = macros[macro.name];
-    if (old !== undefined) {
+    if (old != null) {
       // GCC preprocessor docs section 3.8 say that macros are effectively the same if:
       // - Both are the same type (object/function)
       // - All of the tokens are the same
@@ -1785,16 +1785,16 @@
       In the case of #2, the comments have to be accumulated so they can be attached
       to the next node that comes along.
     */
-    if (lastTokCommentsAfter !== null) {
-      if (!preSkipping && orphanedComments === null && (lastFinishedNode === undefined || lastFinishedNode.commentsAfter === undefined))
+    if (lastTokCommentsAfter != null) {
+      if (!preSkipping && orphanedComments == null && (lastFinishedNode == null || lastFinishedNode.commentsAfter == null))
         Array.prototype.push.apply(orphanedComments = [], lastTokCommentsAfter);
     }
     else
       orphanedComments = null;
 
     // Same as above, but for spaces
-    if (lastTokSpacesAfter !== null) {
-      if (!preSkipping && orphanedSpaces === null && (lastFinishedNode === undefined || lastFinishedNode.spacesAfter === undefined))
+    if (lastTokSpacesAfter != null) {
+      if (!preSkipping && orphanedSpaces == null && (lastFinishedNode == null || lastFinishedNode.spacesAfter == null))
         Array.prototype.push.apply(orphanedSpaces = [], lastTokSpacesAfter);
     }
     else
@@ -1871,17 +1871,17 @@
       /*
         If there are orphaned comments, there are a few states we could be in:
 
-        1. tokCommentsBefore !== null, which means there is another orphan comment,
+        1. tokCommentsBefore != null, which means there is another orphan comment,
            so append it to the orphans.
         2. The lastFinishedNode has no commentsAfter, which means there are no more
            orphans to accumulate, and they will be attached to the next node.
         3. The last finished node has commentsAfter, which means the orphanedComments
            actually belong to that previous node.
       */
-      if (orphanedComments !== null) {
-        if (tokCommentsBefore !== null)
+      if (orphanedComments != null) {
+        if (tokCommentsBefore != null)
           Array.prototype.push.apply(orphanedComments, tokCommentsBefore);
-        if (lastFinishedNode === undefined || lastFinishedNode.commentsAfter === undefined)
+        if (lastFinishedNode == null || lastFinishedNode.commentsAfter == null)
           tokCommentsBefore = orphanedComments;
         else {
           Array.prototype.push.apply(lastFinishedNode.commentsAfter, orphanedComments);
@@ -1897,8 +1897,8 @@
         Then set tokCommentsBefore to the lastFinishedNode's commentsAfter, so that
         the next node will pick them up as commentsBefore.
       */
-      else if (lastFinishedNode !== undefined) {
-        if (tokCommentsBefore !== null)
+      else if (lastFinishedNode != null) {
+        if (tokCommentsBefore != null)
           Array.prototype.push.apply(lastFinishedNode.commentsAfter || (lastFinishedNode.commentsAfter = []), tokCommentsBefore);
         tokCommentsBefore = lastFinishedNode.commentsAfter;
       }
@@ -1906,18 +1906,18 @@
 
     // Same as above, but for spaces
     if (options.trackSpaces && !preSkipping) {
-      if (orphanedSpaces !== null) {
-        if (tokSpacesBefore !== null)
+      if (orphanedSpaces != null) {
+        if (tokSpacesBefore != null)
           Array.prototype.push.apply(orphanedSpaces, tokSpacesBefore);
-        if (lastFinishedNode === undefined || lastFinishedNode.spacesAfter === undefined)
+        if (lastFinishedNode == null || lastFinishedNode.spacesAfter == null)
           tokSpacesBefore = orphanedSpaces;
         else {
           Array.prototype.push.apply(lastFinishedNode.spacesAfter, orphanedSpaces);
           tokSpacesBefore = lastFinishedNode.spacesAfter;
         }
       }
-      else if (lastFinishedNode !== undefined) {
-        if (tokSpacesBefore !== null)
+      else if (lastFinishedNode != null) {
+        if (tokSpacesBefore != null)
           Array.prototype.push.apply(lastFinishedNode.spacesAfter || (lastFinishedNode.spacesAfter = []), tokSpacesBefore);
         tokSpacesBefore = lastFinishedNode.spacesAfter;
       }
@@ -1928,7 +1928,7 @@
       // are not looked up during directive handling. We have to wait until now to expand the macro
       // to ensure it is defined and that comments/spaces before it are handled correctly.
       var macro;
-      if ((macro = getMacro(tokVal)) !== undefined)
+      if ((macro = getMacro(tokVal)) != null)
         expandMacro(macro, tokenStream);
     }
   }
@@ -2013,7 +2013,7 @@
     var prec = tokType.binop;
     if (prec) {
       // Only operators marked with a preprocessor attribute are allowed
-      if (tokType.preprocess === undefined)
+      if (tokType.preprocess == null)
         raise(tokStart, "Invalid #if expression operator: '" + tokVal + "'");
       if (prec > minPrec) {
         var node = startNodeFrom(left);
@@ -2216,7 +2216,7 @@
 
   function pushMacro(macro, context) {
     var state;
-    if (context === undefined) {
+    if (context == null) {
       // If we are reading from source, clear macroTokens to receive a new expansion
       macroTokens.clear();
       tokenStreamIndex = 0;
@@ -2248,7 +2248,7 @@
 
   function popMacro(context) {
     var state = macroStack.pop();
-    if (context !== undefined) {
+    if (context != null) {
       // Communicate to the macro caller where we stopped parsing its token stream.
       context.tokenIndex = tokenStreamIndex - 1;
       readToken = state.readToken;
@@ -2328,7 +2328,7 @@
     }
     // We are now pointing at the token after the last one in the macro call.
     // If the macro will be expanded, save some state.
-    if (context === undefined) {
+    if (context == null) {
       if (isMacroCall) {
         // Save an adjusted version of the current token as outlined above
         var stateBefore = macroStack[0];
@@ -2337,7 +2337,7 @@
         tokenAfterMacro = makeToken();
       }
     }
-    else if (args === null) {
+    else if (args == null) {
       // If the macro has no args and is nested and we have not reached the end of
       // the token stream, the next() above pushed us past the token *after* the macro call,
       // which the caller will want to read again. So we back up one token in the stream.
@@ -2352,7 +2352,7 @@
       expandMacroBody(macro, nameToken, args, expandedTokens);
     preprocessorState = savedState;
     popMacro(context);
-    if (context === undefined) {
+    if (context == null) {
       if (isMacroCall) {
         macroTokens.push(tokenAfterMacro);
         readToken = streamReadToken;
@@ -2391,7 +2391,7 @@
               args.push(arg);
             // Don't go to the next token if we are nested, because we are already pointing
             // just past the first token after the macro args.
-            if (context === undefined) {
+            if (context == null) {
               skipSpace();
               next();
             }
@@ -2489,7 +2489,7 @@
         else if (c === '"' || c === "'") {
           stringRegex.lastIndex = i;
           var match = stringRegex.exec(str);
-          if (match === null) {
+          if (match == null) {
             // If the regex fails, the string was unterminated, so take whatever is left and stop
             result += str.slice(i);
             break;
@@ -2539,7 +2539,7 @@
         var token = bodyTokens[i];
         if (token.type === _name) {
           var nestedMacro;
-          if ((nestedMacro = lookupMacro(token.value)) !== undefined) {
+          if ((nestedMacro = lookupMacro(token.value)) != null) {
             // tokenIndex: i + 1 because the index points to the macro name, we want to start parsing after that
             var context = {
               tokens: bodyTokens,
@@ -2657,7 +2657,7 @@
         tokensToPaste[i] = [toks[i]];
     }
     // Only paste if both tokens are non-empty.
-    var doPaste = tokensToPaste[0] !== null && tokensToPaste[1] !== null;
+    var doPaste = tokensToPaste[0] != null && tokensToPaste[1] != null;
     if (doPaste) {
       // Take the last token from the left side and first from the right,
       // they will be pasted together if possible. Everything else is
@@ -2673,7 +2673,7 @@
     if (doPaste) {
       var tokenText = leftToken.input.slice(leftToken.start, leftToken.end) + rightToken.input.slice(rightToken.start, rightToken.end);
       var pastedToken = lexToken(tokenText);
-      if (pastedToken !== null)
+      if (pastedToken != null)
         pastedTokens.push(pastedToken);
       else {
         console.warn("Warning: preprocessor token pasting formed '" + tokenText + "', an invalid token " + makeLineColumnDisplay(macro.tokens[index + 1]));
@@ -2684,14 +2684,14 @@
   }
 
   function expandMacroArgument(arg) {
-    if (arg.expandedTokens === undefined) {
+    if (arg.expandedTokens == null) {
       arg.expandedTokens = [];
       for (var i = 0; i < arg.tokens.length; ++i) {
         var token = arg.tokens[i];
         if (token.type === _name) {
           // true means this is a macro argument, which may be self-referential
           var nestedMacro = lookupMacro(token.value, true);
-          if (nestedMacro !== undefined) {
+          if (nestedMacro != null) {
             var context = {
               tokens: arg.tokens,
               tokenIndex: i + 1
@@ -2708,16 +2708,16 @@
   }
 
   function stringifyMacroArgument(arg) {
-    if (arg.stringifiedTokens === undefined)
+    if (arg.stringifiedTokens == null)
       arg.stringifiedTokens = stringifyTokens(arg.tokens);
     return arg.stringifiedTokens;
   }
 
   function lookupMacroParameter(macro, token) {
     if (token.type === _name || token.type === _stringifiedName) {
-      if (token.macroParameter === undefined)
+      if (token.macroParameter == null)
         token.macroParameter = macro.getParameterByName(token.value);
-      return token.macroParameter !== undefined;
+      return token.macroParameter != null;
     }
     return false;
   }
@@ -2729,7 +2729,7 @@
     macro = getMacro(name);
     // Comparing isArg !== true is faster than !isArg, because testing a non-boolean
     // for falseness is very slow.
-    if (macro !== undefined && isArg !== true && isMacroSelfReference(macro))
+    if (macro != null && isArg !== true && isMacroSelfReference(macro))
       macro = undefined;
     return macro;
   }
@@ -2754,7 +2754,7 @@
       token = preprocessorGetToken();
       // If tokEnd did not reach the end of the text,
       // the entire text was not a single token and thus is invalid.
-      if (token !== null && token.end < text.length)
+      if (token != null && token.end < text.length)
         token = null;
     }
     catch (e) {
@@ -2827,7 +2827,7 @@
   function node_loc_t() {
     this.start = tokStartLoc;
     this.end = null;
-    if (sourceFile !== null) this.source = sourceFile;
+    if (sourceFile != null) this.source = sourceFile;
   }
 
   function startNode() {
@@ -2991,7 +2991,7 @@
     if (!program) node.body = [];
     while (tokType !== _eof) {
       var stmt = parseStatement();
-      if (stmt !== null) {
+      if (stmt != null) {
         node.body.push(stmt);
         if (first && isUseStrict(stmt)) setStrict(true);
         first = false;
@@ -3543,7 +3543,7 @@
     expect(_braceL, "Expected '{' before block");
     while (!eat(_braceR)) {
       var stmt = parseStatement(_braceR);
-      if (stmt !== null) {
+      if (stmt != null) {
         node.body.push(stmt);
         if (first && allowStrict && isUseStrict(stmt)) {
           oldStrict = strict;
