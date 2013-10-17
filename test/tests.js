@@ -28917,7 +28917,6 @@ test("#if DEBUG\n#define LOG(format, args...) console.log(format, ##args)\n#else
 
 // 3.7.1 Standard Predefined Macros
 
-// Only __OBJJ__ is defined
 test("objj = __OBJJ__;\n", {
   "type": "Program",
   "start": 0,
@@ -28986,6 +28985,51 @@ test("objj = __OBJJ__;\n", {
   preprocess: true,
   objj: false
 });
+
+if (typeof(window) !== "undefined")
+  test("#ifdef __BROWSER__\n\"browser\";\n#else\n\"CommonJS\";\n#endif\n", {
+    "type": "Program",
+    "start": 0,
+    "end": 54,
+    "body": [
+      {
+        "type": "ExpressionStatement",
+        "start": 19,
+        "end": 29,
+        "expression": {
+          "type": "Literal",
+          "start": 19,
+          "end": 28,
+          "value": "browser",
+          "raw": "\"browser\""
+        }
+      }
+    ]
+  }, {
+    preprocess: true
+  });
+else
+  test("#ifdef __BROWSER__\n\"browser\";\n#else\n\"CommonJS\";\n#endif\n", {
+    "type": "Program",
+    "start": 0,
+    "end": 54,
+    "body": [
+      {
+        "type": "ExpressionStatement",
+        "start": 36,
+        "end": 47,
+        "expression": {
+          "type": "Literal",
+          "start": 36,
+          "end": 46,
+          "value": "CommonJS",
+          "raw": "\"CommonJS\""
+        }
+      }
+    ]
+  }, {
+    preprocess: true
+  });
 
 // 3.10.1 Misnesting
 

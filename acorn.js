@@ -1338,7 +1338,8 @@
   // Definitions for predefined macros.
 
   var predefinedMacros = {
-    "__OBJJ__": function() { return options.objj ? "1" : undefined}
+    "__OBJJ__": function() { return options.objj ? "1" : undefined},
+    "__BROWSER__": function() { return (typeof(window) !== "undefined") ? "1" : undefined}
   };
 
   // Contains a hash of macro names to Macro objects.
