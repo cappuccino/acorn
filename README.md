@@ -140,7 +140,7 @@ file in every node’s "loc" object. Note that the contents of this option are n
 
 - **preprocess**: When `true`, the parser recognizes and follows preprocessor directives. For more information, see the [Preprocessor](#preprocessor) section below. *Default*: true
 
-- **macros**: When `preprocess` is `true`, you may pass an array of macro definitions in this option, which will create predefined macros with the given names. Definitions may be in one of three forms:
+- **macros**: When `preprocess` is `true`, you may pass an array of macro objects and/or text definitions in this option, which will create predefined macros with the given names. Macro objects will be added as is. Text definitions may be in one of three forms:
 
     - name
     - name=definition
@@ -165,11 +165,94 @@ In conjunction with the `macros` option, there are many powerful uses of the pre
 #if DEBUG
 #define LOG(format, args...) console.log(format, ##args)
 #else
-#define LOG()
+#define LOG(...)
 #endif
 
 LOG("(%d, %d)", x, y);
 LOG("This is awesome!");
+```
+
+### Reusing defined macros
+
+After calling the `acorn.parse` function, you may retrieve any defined macros with the `acorn.getMacros` function. If the preprocessor is off, it will return `null`. If the preprocessor is on, it will return an array of macro objects defined during the call to `acorn.parse`, including any macros you passed in via `options.macros`, but not including acorn’s own predefined macros.
+
+This allows you to pass the macros created in one file to other files. For example, let’s say you have a file that defines debug logging macros:
+
+```
+#define LOG_LEVEL_NONE 0
+#define LOG_LEVEL_DEBUG 1
+#define LOG_LEVEL_INFO 2
+#define LOG_LEVEL_VERBOSE 3
+
+#if LOG_LEVEL >= LOG_LEVEL_DEBUG
+  #define LOG(format, args...)  console.log(format, ##args)
+#else
+  #define LOG(...)
+#endif
+
+#if LOG_LEVEL >= LOG_LEVEL_INFO
+  #define LOG_INFO(format, args...)  console.log(format, ##args)
+#else
+  #define LOG_INFO(...)
+#endif
+
+#if LOG_LEVEL >= LOG_LEVEL_VERBOSE
+  #define LOG_VERBOSE(format, args...)  console.log(format, ##args)
+#else
+  #define LOG_VERBOSE(...)
+#endif
+```
+
+We can create these macros by parsing the file and passing in the macro for `LOG_LEVEL`, for example let’s say we want `LOG_LEVEL_INFO` (1):
+
+```javascript
+var fs = require('fs'),
+    acorn = require('objj-acorn');
+
+function getLoggingMacros(logLevel)
+{
+    var code = fs.readFileSync('logging-defines.js', 'utf8');
+    acorn.parse(code, {macros: ['LOG_LEVEL=' + logLevel]});
+    return acorn.getMacros();
+}
+
+var macros = getLoggingMacros(1);
+```
+
+We use these logging macros in all of our source files. Here’s an example:
+
+```javascript
+if (someFlag === 0)
+{
+    LOG_INFO("someFlag was 0!");
+    doSomething();
+}
+else
+{
+    LOG_VERBOSE("someFlag == " + someFlag);
+    doSomethingElse();
+}
+```
+
+We can pass the macros defined in "logging-defines.js" to another file that uses the logging macros:
+
+```javascript
+code = fs.readFileSync('something.js', 'utf8');
+var ast = acorn.parse(code, {macros: macros});
+```
+
+And in this case, where `LOG_LEVEL` was defined as 1 (`LOG_LEVEL_INFO`), the following code would be generated:
+
+```javascript
+if (someFlag === 0)
+{
+    console.log("someFlag was 0!");
+    doSomething();
+}
+else
+{
+    doSomethingElse();
+}
 ```
 
 ### Differences from the GNU C Preprocessor
@@ -185,7 +268,7 @@ For the supported features mentioned above, the acorn preprocessor implementatio
     ```objj
     #define isFoo(arg)  (/foo/).test(arg)
 
-    if (isFoo("bar"))
+    if (isFoo('bar'))
     ```
 
 ## Errors

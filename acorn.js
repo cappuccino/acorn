@@ -137,8 +137,8 @@
     objj: true,
     // Turn on the preprocessor.
     preprocess: true,
-    // An array of macro definitions may be passed in. Definitions may be
-    // in one of two forms:
+    // An array of macro objects and/or text definitions may be passed in.
+    // Definitions may be in one of two forms:
     //    macro
     //    macro=body
     macros: null,
@@ -1337,7 +1337,9 @@
 
   // Definitions for predefined macros.
 
-  var predefinedMacros = {"__OBJJ__": function() { return options.objj ? "1" : undefined}};
+  var predefinedMacros = {
+    "__OBJJ__": function() { return options.objj ? "1" : undefined}
+  };
 
   // Contains a hash of macro names to Macro objects.
 
@@ -1375,12 +1377,16 @@
     this.tokens = tokens;
   }
 
-  Macro.prototype.isParameter = function(identifier) {
-    return this.parameterMap[identifier] !== undefined;
+  Macro.prototype.isParameter = function(name) {
+    return this.parameterMap[name] !== undefined;
   }
 
-  Macro.prototype.getParameterByName = function(identifier) {
-    return this.parameterMap[identifier];
+  Macro.prototype.getParameterByName = function(name) {
+    return this.parameterMap[name];
+  }
+
+  Macro.prototype.getName = function() {
+    return this.name;
   }
 
   function initPreprocessor(inpt, opts) {
@@ -1421,7 +1427,7 @@
   }
 
   /*
-    Defines a macro from text in one of two formats:
+    Defines a macro from an array of macro objects and/or text definitions in one of two formats:
 
     macro
     macro=body
@@ -1430,31 +1436,43 @@
     In the second case, it must pass the normal parsing rules for macros.
   */
   function defineMacros(definitions, predefined) {
-    if (definitions.length === 0)
-      return;
-    var savedInput = input;
     for (var i = 0; i < definitions.length; ++i) {
-      var definition = definitions[i].trim();
-      var pos = definition.indexOf("=");
-      if (pos === 0)
-        raise(0, "Invalid macro definition: '" + definition + "'");
-      // If there is no macro body, define the name with the value 1
-      var name, body;
-      if (pos > 0) {
-        name = definition.slice(0, pos);
-        body = definition.slice(pos + 1);
-      } else {
-        name = definition;
-        body = "1";
+      var macro = definitions[i];
+      if (typeof(macro) === "string") {
+        defineMacro(macro, predefined);
       }
-      if (!predefined && predefinedMacros.hasOwnProperty(name))
-        raise(0, "'" + name + "' is a predefined macro name");
-      // Construct a definition that parseDefine can digest
-      input = name + " " + body;
-      inputLen = input.length;
-      initTokenState();
-      parseDefine();
+      else {
+        if (!predefined && predefinedMacros.hasOwnProperty(macro.name))
+          raise(0, "'" + macro.name + "' is a predefined macro name");
+        else
+          macros[macro.name] = macro;
+      }
     }
+  }
+
+  function defineMacro(definition, predefined) {
+    var savedInput = input;
+    definition = definition.trim();
+    var pos = definition.indexOf("=");
+    if (pos === 0)
+      raise(0, "Invalid macro definition: '" + definition + "'");
+    // If there is no macro body, define the name with the value 1
+    var name, body;
+    if (pos > 0) {
+      name = definition.slice(0, pos);
+      body = definition.slice(pos + 1);
+    }
+    else {
+      name = definition;
+      body = "1";
+    }
+    if (!predefined && predefinedMacros.hasOwnProperty(name))
+      raise(0, "'" + name + "' is a predefined macro name");
+    // Construct a definition that parseDefine can digest
+    input = name + " " + body;
+    inputLen = input.length;
+    initTokenState();
+    parseDefine();
     input = savedInput;
     inputLen = input.length;
   }
@@ -1515,6 +1533,18 @@
     return macros[name] !== undefined;
   }
 
+  // Returns an array of the non-predefined Macro objects
+
+  exports.getMacros = function() {
+    var list = [];
+    if (macros !== null) {
+      for (var name in macros)
+        if (!predefinedMacros.hasOwnProperty(name))
+          list.push(macros[name]);
+    }
+    return list;
+  }
+
   function setToken(t) {
     tokInput = t.input;
     tokStart = t.start;
@@ -1564,6 +1594,8 @@
   function streamSetStrict(strct) {
     strict = strct;
   }
+
+  // Parses a macro definition following #define and returns a Macro object
 
   function parseDefine() {
     next();
