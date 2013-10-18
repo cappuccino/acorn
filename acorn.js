@@ -3521,7 +3521,7 @@
         argument.type = parseObjectiveJType();
         expect(_parenR, "Expected closing ')' after method argument type");
       }
-      argument.name = parseIdent(false);
+      argument.identifier = parseIdent(false);
       if (tokType === _braceL || tokType === _semi) break;
       if (eat(_comma)) {
         expect(_dotdotdot, "Expected '...' after ',' in method declaration");
