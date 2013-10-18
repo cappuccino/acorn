@@ -3363,9 +3363,9 @@
         if (options.objj) {
           next();
           if (tokType === _string)
-            node.localfilepath = true;
-          else if (tokType ===_filename)
-            node.localfilepath = false;
+            node.isLocal = true;
+          else if (tokType === _filename)
+            node.isLocal = false;
           else
             unexpected();
 
