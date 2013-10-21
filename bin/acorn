@@ -13,10 +13,10 @@ function help(status) {
   console.log("If <file> is '-', reads from stdin. You may also pipe or redirect into " + name + " and omit <file>.\n");
   console.log("Options:");
   console.log("--ecma3|--ecma5     Sets the ECMAScript version to parse. Default is version 5.");
-  console.log("--strictSemicolons  Prevents the parser from doing automatic semicolon insertion.");
+  console.log("--strict-semicolons Prevents the parser from doing automatic semicolon insertion.");
   console.log("                    Statements that do not end in semicolons will generate an error.");
-  console.log("--trackComments     Attaches an array of comments found before and after each expression node.");
-  console.log("--trackSpaces       Attaches an array of whitespaces found before and after each expression node.");
+  console.log("--track-comments    Attaches an array of comments found before and after each expression node.");
+  console.log("--track-spaces      Attaches an array of whitespaces found before and after each expression node.");
   console.log("--locations         Attaches a \"loc\" object to each node with \"start\" and \"end\" subobjects,");
   console.log("                    each of which contains the one-based line and zero-based column numbers.");
   console.log("-Dmacro[([param, ...])][=definition]]");
@@ -37,9 +37,9 @@ for (var i = 2; i < process.argv.length; ++i) {
   var arg = process.argv[i];
   if (arg == "--ecma3") options.ecmaVersion = 3;
   else if (arg == "--ecma5") options.ecmaVersion = 5;
-  else if (arg == "--strictSemicolons") options.strictSemicolons = true;
-  else if (arg == "--trackComments") options.trackComments = true;
-  else if (arg == "--trackSpaces") options.trackSpaces = true;
+  else if (arg == "--strict-semicolons") options.strictSemicolons = true;
+  else if (arg == "--track-comments") options.trackComments = true;
+  else if (arg == "--track-spaces") options.trackSpaces = true;
   else if (arg == "--locations") options.locations = true;
   else if (arg.slice(0, 2) == "-D") (options.macros || (options.macros = [])).push(arg.slice(2));
   else if (arg == "--no-preprocess") options.preprocess = false;
