@@ -3276,8 +3276,10 @@
           }
           node.body = [];
           while(!eat(_end)) {
-            if (tokType === _eof) raise(tokPos, "Expected '@end' after '@interface'");
-            node.body.push(parseClassElement());
+            if (tokType === _eof) raise(tokPos, "Expected @end after @interface");
+            var stmt = parseClassElement();
+            if (stmt)
+              node.body.push(stmt);
           }
           return finishNode(node, "InterfaceDeclarationStatement");
         }
@@ -3316,9 +3318,11 @@
             node.endOfIvars = tokStart;
           }
           node.body = [];
-          while(!eat(_end)) {
-            if (tokType === _eof) raise(tokPos, "Expected '@end' after '@implementation'");
-            node.body.push(parseClassElement());
+          while (!eat(_end)) {
+            if (tokType === _eof) raise(tokPos, "Expected @end after @implementation");
+            var stmt = parseClassElement();
+            if (stmt)
+              node.body.push(stmt);
           }
           return finishNode(node, "ClassDeclarationStatement");
         }
@@ -3344,7 +3348,7 @@
             next();
           }
           while(!eat(_end)) {
-            if (tokType === _eof) raise(tokPos, "Expected '@end' after '@protocol'");
+            if (tokType === _eof) raise(tokPos, "Expected @end after @protocol");
             if (eat(_required)) continue;
             if (eat(_optional)) {
               while(!eat(_required) && tokType !== _end) {
@@ -3546,7 +3550,7 @@
       inFunction = oldInFunc; labels = oldLabels;
       return finishNode(element, "MethodDeclarationStatement");
     } else
-      return parseStatement();
+      return parseStatement(_end);
   }
 
   function parseProtocolClassElement() {
