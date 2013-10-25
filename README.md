@@ -277,6 +277,21 @@ Acorn defines the following predefined macros:
 
 For the supported features mentioned above, the acorn preprocessor implementation is identical in every detail to the GNU C preprocessor, with the following exceptions:
 
+- For various reasons, preprocessor directives are effectively implemented as JavaScript statements, and thus may not break up regular JavaScript statements. For example, you cannot do this:
+
+    ```objj
+    #ifdef FOO
+    function foo()
+    #else
+    function bar()
+    #endif
+    {
+        doSomething();
+    }
+    ```
+
+  This doesn’t work because the body of a function is actually part of the `function` statement. So when the parser reaches the `{`, it chokes, because that isn’t a valid statement.
+
 - Preprocessor directives may not be used within macro arguments.
 
 - If you use regular expression literals in a macro, to be safe you should enclose them in parentheses to be sure they are parsed as regular expressions. This is due to an ambiguity in the ECMAScript grammar. For example, you would do this:
