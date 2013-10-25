@@ -3538,7 +3538,7 @@
 
   function parseClassElement() {
     var element = startNode();
-    if (tokVal === '+' || tokVal === '-') {
+    if (tokType == _plusMin) {
       parseMethodDeclaration(element);
       eat(_semi);
       element.startOfBody = lastEnd;
