@@ -4,7 +4,7 @@ var path = require("path");
 var fs = require("fs");
 var acorn = require("../acorn.js");
 
-var infile, parsed, code = "", options = {}, silent = false, compact = false, useStdin = !process.stdin.isTTY;
+var infile, parsed, code = "", options = {}, silent = false, compact = false, useStdin = false;
 
 function help(status) {
   var name = path.basename(process.argv[1]);
