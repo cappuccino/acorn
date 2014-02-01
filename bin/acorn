@@ -19,7 +19,7 @@ function help(status) {
   console.log("--track-spaces       Attaches an array of whitespaces found before and after each expression node.");
   console.log("--locations          Attaches a \"loc\" object to each node with \"start\" and \"end\" subobjects,");
   console.log("                     each of which contains the one-based line and zero-based column numbers.");
-  console.log("-Dmacro[([param, ...])][=definition]]");
+  console.log("-Dmacro|--macro macro[([param, ...])][=definition]]");
   console.log("                     Defines a macro. A name with no parameters and no definition will be defined");
   console.log("                     with the value 1. To be safe from shell expansion, the values on either side");
   console.log("                     of the = should be enclosed in '', for example -D'PLUS_ONE(arg)'='arg + 1'.");
@@ -42,6 +42,7 @@ for (var i = 2; i < process.argv.length; ++i) {
   else if (arg == "--track-spaces") options.trackSpaces = true;
   else if (arg == "--locations") options.locations = true;
   else if (arg.slice(0, 2) == "-D") (options.macros || (options.macros = [])).push(arg.slice(2));
+  else if (arg == "--macro") (options.macros || (options.macros = [])).push(process.argv[++i]);
   else if (arg == "--no-preprocess") options.preprocess = false;
   else if (arg == "--no-objj") options.objj = false;
   else if (arg == "--compact") compact = true;
