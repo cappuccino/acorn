@@ -77,7 +77,7 @@ if (useStdin) {
 }
 else {
   options.sourceFile = path.resolve(infile);
-  code = fs.readFileSync(infile, "utf8");
+  code = fs.readFileSync(options.sourceFile, "utf8");
   main();
 }
 
