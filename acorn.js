@@ -492,11 +492,11 @@
   var _bracketL = {type: "[", beforeExpr: true}, _bracketR = {type: "]"}, _braceL = {type: "{", beforeExpr: true};
   var _braceR = {type: "}"}, _parenL = {type: "(", beforeExpr: true, preprocess: true}, _parenR = {type: ")", preprocess: true};
   var _comma = {type: ",", beforeExpr: true}, _semi = {type: ";", beforeExpr: true};
-  var _colon = {type: ":", beforeExpr: true}, _dot = {type: "."}, _question = {type: "?", beforeExpr: true};
+  var _colon = {type: ":", beforeExpr: true}, _dot = {type: "."}, _ellipsis = {type: "..."}, _question = {type: "?", beforeExpr: true};
 
   // Objective-J token types
 
-  var _at = {type: "@"}, _dotdotdot = {type: "..."}, _numberSign = {type: "#"};
+  var _at = {type: "@"}, _numberSign = {type: "#"};
 
   // Operators. These carry several kinds of properties to help the
   // parser use them properly (the presence of these properties is
@@ -535,8 +535,8 @@
 
   exports.tokTypes = {bracketL: _bracketL, bracketR: _bracketR, braceL: _braceL, braceR: _braceR,
                       parenL: _parenL, parenR: _parenR, comma: _comma, semi: _semi, colon: _colon,
-                      dot: _dot, question: _question, slash: _slash, eq: _eq, name: _name, eof: _eof,
-                      num: _num, regexp: _regexp, string: _string};
+                      dot: _dot, ellipsis: _ellipsis, question: _question, slash: _slash, eq: _eq,
+                      name: _name, eof: _eof, num: _num, regexp: _regexp, string: _string};
   for (var kw in keywordTypes) exports.tokTypes["_" + kw] = keywordTypes[kw];
 
   // This is a trick taken from Esprima. It turns out that, on
@@ -843,15 +843,17 @@
   // The `forceRegexp` parameter is used in the one case where the
   // `tokRegexpAllowed` trick does not work. See `parseStatement`.
 
-  function readToken_dot(code) {
+  function readToken_dot() {
     var next = tokInput.charCodeAt(tokPos + 1);
-    if (next >= 48 && next <= 57) return readNumber(String.fromCharCode(code));
-    if (next === 46 && options.objj && tokInput.charCodeAt(tokPos + 2) === 46) { //'.'
+    if (next >= 48 && next <= 57) return readNumber(true);
+    var next2 = tokInput.charCodeAt(tokPos + 2);
+    if ((options.objj || options.ecmaVersion >= 6) && next === 46 && next2 === 46) { //'.'
       tokPos += 3;
-      return finishToken(_dotdotdot);
+      return finishToken(_ellipsis);
+    } else {
+      ++tokPos;
+      return finishToken(_dot);
     }
-    ++tokPos;
-    return finishToken(_dot);
   }
 
   function readToken_slash() { // '/'
@@ -953,7 +955,7 @@
       // The interpretation of a dot depends on whether it is followed
       // by a digit.
     case 46: // '.'
-      return readToken_dot(code);
+      return readToken_dot();
 
       // Punctuation tokens.
     case 40: ++tokPos; return finishToken(_parenL);
@@ -1644,7 +1646,7 @@
                 raise(tokStart, "'" + argName + "' has already been used as a parameter name");
               next();
               // If a name is followed by ..., it means the variadic args are named
-              if (tokType === _dotdotdot) {
+              if (tokType === _ellipsis) {
                 variadicParameterName = argName;
                 continue;
               }
@@ -1661,7 +1663,7 @@
                 break;
               }
 
-            case _dotdotdot:
+            case _ellipsis:
               isVariadic = true;
               var parameter = {
                 name: variadicParameterName,
@@ -3541,7 +3543,7 @@
       argument.identifier = parseIdent(false);
       if (tokType === _braceL || tokType === _semi) break;
       if (eat(_comma)) {
-        expect(_dotdotdot, "Expected '...' after ',' in method declaration");
+        expect(_ellipsis, "Expected '...' after ',' in method declaration");
         node.parameters = true;
         break;
       }
