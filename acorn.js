@@ -2842,7 +2842,7 @@
 
   function sourceSetStrict(strct) {
     strict = strct;
-    tokPos = lastEnd;
+    tokPos = tokStart;
     while (tokPos < tokLineStart) {
       tokLineStart = tokInput.lastIndexOf("\n", tokLineStart - 2) + 1;
       --tokCurLine;
