@@ -666,7 +666,7 @@
   // These are used when `options.locations` is on, for the
   // `tokStartLoc` and `tokEndLoc` properties.
 
-  function line_loc_t() {
+  function Position() {
     this.line = tokCurLine;
     this.column = tokPos - tokLineStart;
   }
@@ -695,7 +695,7 @@
 
   function finishToken(type, val) {
     tokEnd = tokPos;
-    if (options.locations) tokEndLoc = new line_loc_t;
+    if (options.locations) tokEndLoc = new Position();
     tokType = type;
     tokVal = val;
     tokRegexpAllowed = type.beforeExpr;
@@ -707,7 +707,7 @@
   }
 
   function skipBlockComment(lastIsNewlinePos) {
-    var startLoc = options.onComment && options.locations && new line_loc_t;
+    var startLoc = options.onComment && options.locations && new Position();
     var start = tokPos, end = tokInput.indexOf("*/", tokPos += 2);
     if (end === -1) raise(tokPos - 2, "Unterminated comment");
     tokPos = end + 2;
@@ -721,14 +721,14 @@
     }
     if (options.onComment)
       options.onComment(true, tokInput.slice(start + 2, end), start, tokPos,
-                        startLoc, options.locations && new line_loc_t);
+                        startLoc, options.locations && new Position());
     if (options.trackComments)
       (tokComments || (tokComments = [])).push(tokInput.slice(lastIsNewlinePos != null && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
   }
 
   function skipLineComment(lastIsNewlinePos) {
     var start = tokPos;
-    var startLoc = options.onComment && options.locations && new line_loc_t;
+    var startLoc = options.onComment && options.locations && new Position();
     var ch = tokInput.charCodeAt(tokPos+=2);
     while (tokPos < inputLen && ch !== 10 && ch !== 13 && ch !== 8232 && ch !== 8233) {
       ++tokPos;
@@ -736,7 +736,7 @@
     }
     if (options.onComment)
       options.onComment(false, tokInput.slice(start + 2, tokPos), start, tokPos,
-                        startLoc, options.locations && new line_loc_t);
+                        startLoc, options.locations && new Position());
     if (options.trackComments)
       (tokComments || (tokComments = [])).push(tokInput.slice(lastIsNewlinePos != null && options.trackCommentsIncludeLineBreak ? lastIsNewlinePos : start, tokPos));
   }
@@ -1054,7 +1054,7 @@
     tokSpacesBefore = tokSpaces;
     if (!forceRegexp) tokStart = tokPos;
     else tokPos = tokStart + 1;
-    if (options.locations) tokStartLoc = new line_loc_t;
+    if (options.locations) tokStartLoc = new Position();
     if (forceRegexp) return readRegexp();
     if (tokPos >= inputLen) return finishToken(_eof);
 
@@ -1347,8 +1347,8 @@
   // Definitions for predefined macros.
 
   var predefinedMacros = {
-    "__OBJJ__": function() { return options.objj ? "1" : undefined},
-    "__BROWSER__": function() { return (typeof(window) !== "undefined") ? "1" : undefined}
+    "__OBJJ__": function() { return options.objj ? "1" : undefined; },
+    "__BROWSER__": function() { return (typeof(window) !== "undefined") ? "1" : undefined; }
   };
 
   // Contains a hash of macro names to Macro objects.
@@ -1385,19 +1385,19 @@
     this.isFunction = isFunction;
     this.isVariadic = isVariadic;
     this.tokens = tokens;
-  }
+  };
 
   Macro.prototype.isParameter = function(name) {
     return this.parameterMap[name] !== undefined;
-  }
+  };
 
   Macro.prototype.getParameterByName = function(name) {
     return this.parameterMap[name];
-  }
+  };
 
   Macro.prototype.getName = function() {
     return this.name;
-  }
+  };
 
   function initPreprocessor(inpt, opts) {
     macros = Object.create(null);
@@ -1553,7 +1553,7 @@
           list.push(macros[name]);
     }
     return list;
-  }
+  };
 
   function setToken(t) {
     tokInput = t.input;
@@ -1572,7 +1572,7 @@
     }
     if (options.trackComments) {
       tokComments = t.comments;
-      tokCommentsBefore = t.commentsBefore
+      tokCommentsBefore = t.commentsBefore;
       tokCommentsAfter = t.commentsAfter;
       lastTokCommentsAfter = t.lastCommentsAfter;
     }
@@ -2868,7 +2868,7 @@
 
   exports.Node = Node;
 
-  function node_loc_t() {
+  function SourceLocation() {
     this.start = tokStartLoc;
     this.end = null;
     if (sourceFile) this.source = sourceFile;
@@ -2885,7 +2885,7 @@
       tokSpacesBefore = null;
     }
     if (options.locations)
-      node.loc = new node_loc_t();
+      node.loc = new SourceLocation();
     if (options.directSourceFile)
       node.sourceFile = options.directSourceFile;
     if (options.ranges)
@@ -2910,7 +2910,7 @@
       delete other.spacesBefore;
     }
     if (options.locations) {
-      node.loc = new node_loc_t();
+      node.loc = new SourceLocation();
       node.loc.start = other.loc.start;
     }
     if (options.ranges)
@@ -3028,7 +3028,7 @@
 
   function parseTopLevel(program) {
     lastStart = lastEnd = tokPos;
-    if (options.locations) lastEndLoc = new line_loc_t();
+    if (options.locations) lastEndLoc = new Position();
     inFunction = strict = null;
     labels = [];
     readToken();
