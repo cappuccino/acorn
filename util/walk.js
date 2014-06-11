@@ -1,8 +1,8 @@
 // AST walker module for Mozilla Parser API compatible trees
 
 (function(mod) {
-  if (typeof exports == "object" && typeof module == "object") return mod(exports); // CommonJS
-  if (typeof define == "function" && define.amd) return define(["exports"], mod); // AMD
+  if (typeof exports === "object" && typeof module === "object") return mod(exports); // CommonJS
+  if (typeof define === "function" && define.amd) return define(["exports"], mod); // AMD
   mod((this.acorn || (this.acorn = {})).walk = {}); // Plain browser env
 })(function(exports) {
   "use strict";
@@ -46,8 +46,8 @@
   };
 
   function makeTest(test) {
-    if (typeof test == "string")
-      return function(type) { return type == test; };
+    if (typeof test === "string")
+      return function(type) { return type === test; };
     else if (!test)
       return function() { return true; };
     else
@@ -69,8 +69,8 @@
             (end == null || node.end >= end))
           base[type](node, st, c);
         if (test(type, node) &&
-            (start == null || node.start == start) &&
-            (end == null || node.end == end))
+            (start == null || node.start === start) &&
+            (end == null || node.end === end))
           throw new Found(node, st);
       };
       c(node, state);
@@ -211,7 +211,7 @@
     c(node.body, st, "Statement");
   };
   base.ForInit = function(node, st, c) {
-    if (node.type == "VariableDeclaration") c(node, st);
+    if (node.type === "VariableDeclaration") c(node, st);
     else c(node, st, "Expression");
   };
   base.DebuggerStatement = ignore;
@@ -280,7 +280,7 @@
     for (var i = 0; i < node.body.length; ++i) {
       c(node.body[i], st, "Statement");
     }
-  }
+  };
 
   base.ImportStatement = ignore;
 
@@ -290,7 +290,7 @@
 
   base.MethodDeclarationStatement = function(node, st, c) {
     c(node.body, st, "Statement");
-  }
+  };
 
   base.MessageSendExpression = function(node, st, c) {
     if (node.object) c(node.object, st, "Expression");
@@ -298,7 +298,7 @@
       c(node.arguments[i], st, "Expression");
     if (node.parameters) for (var i = 0; i < node.parameters.length; ++i)
       c(node.parameters[i], st, "Expression");
-  }
+  };
 
   base.SelectorLiteralExpression = ignore;
 
@@ -317,7 +317,7 @@
       for (var i = 0; i < node.params.length; ++i)
         inner.vars[node.params[i].name] = {type: "argument", node: node.params[i]};
       if (node.id) {
-        var decl = node.type == "FunctionDeclaration";
+        var decl = node.type === "FunctionDeclaration";
         (decl ? normalScope(scope) : inner).vars[node.id.name] =
           {type: decl ? "function" : "function name", node: node.id};
       }
