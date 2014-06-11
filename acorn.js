@@ -1094,13 +1094,19 @@
       } else escaped = false;
       ++tokPos;
     }
-    var content = tokInput.slice(start, tokPos);
+    content = tokInput.slice(start, tokPos);
     ++tokPos;
     // Need to use `readWord1` because '\uXXXX' sequences are allowed
     // here (don't ask).
     var mods = readWord1();
     if (mods && !/^[gmsiy]*$/.test(mods)) raise(start, "Invalid regexp flag");
-    return finishToken(_regexp, new RegExp(content, mods));
+    try {
+      var value = new RegExp(content, mods);
+      return finishToken(_regexp, value);
+    } catch (e) {
+      if (e instanceof SyntaxError) raise(start, e.message);
+      raise(e);
+    }
   }
 
   // Read an integer in the given radix. Return null if zero digits
