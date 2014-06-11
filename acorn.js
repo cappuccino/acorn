@@ -2860,11 +2860,13 @@
   // Start an AST node, attaching a start offset and optionally a
   // `commentsBefore` property to it.
 
-  function node_t() {
+  function Node() {
     this.type = null;
     this.start = tokStart;
     this.end = null;
   }
+
+  exports.Node = Node;
 
   function node_loc_t() {
     this.start = tokStartLoc;
@@ -2873,7 +2875,7 @@
   }
 
   function startNode() {
-    var node = new node_t();
+    var node = new Node();
     if (options.trackComments && tokCommentsBefore) {
       node.commentsBefore = tokCommentsBefore;
       tokCommentsBefore = null;
@@ -2897,7 +2899,7 @@
   // already been parsed.
 
   function startNodeFrom(other) {
-    var node = new node_t();
+    var node = new Node();
     node.start = other.start;
     if (other.commentsBefore) {
       node.commentsBefore = other.commentsBefore;
