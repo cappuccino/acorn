@@ -249,6 +249,7 @@
     initTokenState();
 
     function getToken(forceRegexp) {
+      lastEnd = tokEnd;
       readToken(forceRegexp);
       return makeToken();
     }
