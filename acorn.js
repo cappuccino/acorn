@@ -1103,12 +1103,12 @@
     // Need to use `readWord1` because '\uXXXX' sequences are allowed
     // here (don't ask).
     var mods = readWord1();
-    if (mods && !/^[gmsiy]*$/.test(mods)) raise(start, "Invalid regexp flag");
+    if (mods && !/^[gmsiy]*$/.test(mods)) raise(start, "Invalid regular expression flag");
     try {
       var value = new RegExp(content, mods);
       return finishToken(_regexp, value);
     } catch (e) {
-      if (e instanceof SyntaxError) raise(start, e.message);
+      if (e instanceof SyntaxError) raise(start, "Error parsing regular expression: " + e.message);
       raise(e);
     }
   }
