@@ -27,8 +27,8 @@
 // [walk]: util/walk.js
 
 (function(root, mod) {
-  if (typeof exports == "object" && typeof module == "object") return mod(exports, require("./util/walk")); // CommonJS
-  if (typeof define == "function" && define.amd) return define(["exports", "./util/walk"], mod); // AMD
+  if (typeof exports === "object" && typeof module === "object") return mod(exports, require("./util/walk")); // CommonJS
+  if (typeof define === "function" && define.amd) return define(["exports", "./util/walk"], mod); // AMD
   mod(root.acorn || (root.acorn = {}), root.acorn.walk || (root.acorn.walk = {})); // Plain browser env
 })(this, function(exports, walk) {
   "use strict";
@@ -185,7 +185,7 @@
     }
     var pos = getLineInfo(lineInput, inputOffset);
     return "(" + pos.line + ":" + pos.column + ")";
-  }
+  };
 
   // A utility method on Array that clears all of the elements of an existing array.
   // This is currently the fastest way of doing it. For reference: http://jsperf.com/array-destroy/32
@@ -193,12 +193,12 @@
     while (this.length > 0) {
       this.shift();
     }
-  }
+  };
 
   // Utility method to get the last element of an array
   Array.prototype.last = function() {
     return this[this.length - 1];
-  }
+  };
 
   // Acorn is organized as a tokenizer and a recursive-descent parser.
   // The `tokenize` export provides an interface to the tokenizer.
@@ -347,7 +347,7 @@
   // with that message.
 
   function raise(pos, message) {
-    if (typeof pos == "number") pos = getLineInfo(input, pos);
+    if (typeof pos === "number") pos = getLineInfo(input, pos);
     if (options.lineNoInErrorMessage)
       message += " (" + pos.line + ":" + pos.column + ")";
     var syntaxError = new SyntaxError(message);
@@ -546,14 +546,14 @@
     var f = "", cats = [];
     out: for (var i = 0; i < words.length; ++i) {
       for (var j = 0; j < cats.length; ++j)
-        if (cats[j][0].length == words[i].length) {
+        if (cats[j][0].length === words[i].length) {
           cats[j].push(words[i]);
           continue out;
         }
       cats.push([words[i]]);
     }
     function compareTo(arr) {
-      if (arr.length == 1) return f += "return str === " + JSON.stringify(arr[0]) + ";";
+      if (arr.length === 1) return f += "return str === " + JSON.stringify(arr[0]) + ";";
       f += "switch(str){";
       for (var i = 0; i < arr.length; ++i) f += "case " + JSON.stringify(arr[i]) + ":";
       f += "return true}return false;";
@@ -876,7 +876,7 @@
   function readToken_plus_min(code) { // '+-'
     var next = tokInput.charCodeAt(tokPos + 1);
     if (next === code) {
-      if (next == 45 && tokInput.charCodeAt(tokPos + 2) == 62 &&
+      if (next === 45 && tokInput.charCodeAt(tokPos + 2) === 62 &&
           newline.test(tokInput.slice(lastEnd, tokPos))) {
         // A `-->` line comment
         tokPos += 3;
@@ -907,8 +907,8 @@
       if (tokInput.charCodeAt(tokPos + size) === 61) return finishOp(_assign, size + 1);
       return finishOp(_bitShift, size);
     }
-    if (next == 33 && code == 60 && tokInput.charCodeAt(tokPos + 2) == 45 &&
-        tokInput.charCodeAt(tokPos + 3) == 45) {
+    if (next === 33 && code === 60 && tokInput.charCodeAt(tokPos + 2) === 45 &&
+        tokInput.charCodeAt(tokPos + 3) === 45) {
       // `<!--`, an XML-style comment that should be interpreted as a line comment
       tokPos += 4;
       skipLineComment();
@@ -1242,7 +1242,7 @@
           break;
         if (!containsEsc) word = tokInput.slice(start, tokPos);
         containsEsc = true;
-        if (tokInput.charCodeAt(++tokPos) != 117) // "u"
+        if (tokInput.charCodeAt(++tokPos) !== 117) // "u"
           raise(tokPos, "Expecting Unicode escape sequence \\uXXXX");
         ++tokPos;
         var esc = readHexChar(4);
