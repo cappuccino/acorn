@@ -4,61 +4,65 @@ var path = require("path");
 var fs = require("fs");
 var acorn = require("../acorn.js");
 
-var infile, parsed, code = "", options = {}, silent = false, compact = false, useStdin = false;
+var infile, parsed, code = "", options = {};
+var silent = false, compact = false, useStdin = false;
 
 function help(status) {
   var name = path.basename(process.argv[1]);
-  console.log("usage: " + name + " [options] file\n");
-  console.log("Parses <file> and outputs the parsed AST as a stringified JSON object.");
-  console.log("If <file> is '-', reads from stdin. You may also pipe or redirect into " + name + " and omit <file>.\n");
-  console.log("Options:");
-  console.log("--ecma3|--ecma5      Sets the ECMAScript version to parse. Default is version 5.");
-  console.log("--strict-semicolons  Prevents the parser from doing automatic semicolon insertion.");
-  console.log("                     Statements that do not end in semicolons will generate an error.");
-  console.log("--track-comments     Attaches an array of comments found before and after each expression node.");
-  console.log("--track-spaces       Attaches an array of whitespaces found before and after each expression node.");
-  console.log("--locations          Attaches a \"loc\" object to each node with \"start\" and \"end\" subobjects,");
-  console.log("                     each of which contains the one-based line and zero-based column numbers.");
-  console.log("-Dmacro|--macro macro[([param, ...])][=definition]]");
-  console.log("                     Defines a macro. A name with no parameters and no definition will be defined");
-  console.log("                     with the value 1. To be safe from shell expansion, the values on either side");
-  console.log("                     of the = should be enclosed in '', for example -D'PLUS_ONE(arg)'='arg + 1'.");
-  console.log("                     May be used multiple times to define multiple macros.");
-  console.log("--no-objj            Turns off Objective-J syntax parsing.");
-  console.log("--no-preprocess      Turns off the preprocessor. Results in ~30% speed increase.");
-  console.log("--compact            No whitespace is used in the AST output.");
-  console.log("--silent             Do not output the AST, just return the exit status.");
-  console.log("--version            Print the current version and exit.");
-  console.log("--help               Print this usage information and exit.");
+  // We want to print to stderr, not stdout, on errors.
+  var print = (status === 0) ? console.log : console.error;
+
+  print("usage: " + name + " [options] [--] file\n");
+  print("Parses <file> and outputs the parsed AST as a stringified JSON object.");
+  print("If <file> is '-', reads from stdin.\n");
+  print("Options:");
+  print("--ecma3|--ecma5      Sets the ECMAScript version to parse. Default is version 5.");
+  print("--strict-semicolons  Prevents the parser from doing automatic semicolon insertion.");
+  print("                     Statements that do not end in semicolons will generate an error.");
+  print("--track-comments     Attaches an array of comments found before and after each expression node.");
+  print("--track-spaces       Attaches an array of whitespaces found before and after each expression node.");
+  print("--locations          Attaches a \"loc\" object to each node with \"start\" and \"end\" subobjects,");
+  print("                     each of which contains the one-based line and zero-based column numbers.");
+  print("-Dmacro|--macro macro[([param, ...])][=definition]]");
+  print("                     Defines a macro. A name with no parameters and no definition will be defined");
+  print("                     with the value 1. To be safe from shell expansion, the values on either side");
+  print("                     of the = should be enclosed in '', for example -D'PLUS_ONE(arg)'='arg + 1'.");
+  print("                     May be used multiple times to define multiple macros.");
+  print("--no-objj            Turns off Objective-J syntax parsing.");
+  print("--no-preprocess      Turns off the preprocessor. Results in ~30% speed increase.");
+  print("--compact            No whitespace is used in the AST output.");
+  print("--silent             Do not output the AST, just return the exit status.");
+  print("--version            Print the current version and exit.");
+  print("--help               Print this usage information and exit.");
+
   process.exit(status);
 }
 
 for (var i = 2; i < process.argv.length; ++i) {
   var arg = process.argv[i];
-  if (arg == "--ecma3") options.ecmaVersion = 3;
-  else if (arg == "--ecma5") options.ecmaVersion = 5;
-  else if (arg == "--strict-semicolons") options.strictSemicolons = true;
-  else if (arg == "--track-comments") options.trackComments = true;
-  else if (arg == "--track-spaces") options.trackSpaces = true;
-  else if (arg == "--locations") options.locations = true;
-  else if (arg.slice(0, 2) == "-D") (options.macros || (options.macros = [])).push(arg.slice(2));
-  else if (arg == "--macro") (options.macros || (options.macros = [])).push(process.argv[++i]);
-  else if (arg == "--no-preprocess") options.preprocess = false;
-  else if (arg == "--no-objj") options.objj = false;
-  else if (arg == "--compact") compact = true;
-  else if (arg == "--silent") silent = true;
-  else if (arg == "--version") {
+  if (arg[0] !== "-" && !infile) infile = arg;
+  else if (arg === "--" && !infile && i + 2 === process.argv.length) infile = process.argv[++i];
+  else if (arg === "--ecma3") options.ecmaVersion = 3;
+  else if (arg === "--ecma5") options.ecmaVersion = 5;
+  else if (arg === "--strict-semicolons") options.strictSemicolons = true;
+  else if (arg === "--track-comments") options.trackComments = true;
+  else if (arg === "--track-spaces") options.trackSpaces = true;
+  else if (arg === "--locations") options.locations = true;
+  else if (arg.slice(0, 2) === "-D") (options.macros || (options.macros = [])).push(arg.slice(2));
+  else if (arg === "--macro") (options.macros || (options.macros = [])).push(process.argv[++i]);
+  else if (arg === "--no-preprocess") options.preprocess = false;
+  else if (arg === "--no-objj") options.objj = false;
+  else if (arg === "--compact") compact = true;
+  else if (arg === "--silent") silent = true;
+  else if (arg === "--version") {
     console.log(acorn.version);
     process.exit(0);
   }
-  else if (arg.indexOf("--") === 0) help(0);
-  else {
-    if (arg == "-")
-      useStdin = true;
-    else
-      infile = arg;
+  else if (arg === "--help") help(0);
+  else if (arg === "-") {
+    useStdin = true;
     break;
-  }
+  } else help(1);
 }
 
 if (!useStdin && !infile) help(1);
