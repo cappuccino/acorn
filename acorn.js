@@ -133,6 +133,9 @@
     // When `locations` is on, you can pass this to record the source
     // file in every node's `loc` object.
     sourceFile: null,
+    // This value, if given, is stored in every node, whether
+    // `location` is on or off.
+    directSourceFile: null,
     // Turn on objj to allow Objective-J syntax
     objj: true,
     // Turn on the preprocessor.
@@ -2875,6 +2878,8 @@
     }
     if (options.locations)
       node.loc = new node_loc_t();
+    if (options.directSourceFile)
+      node.sourceFile = options.directSourceFile;
     if (options.ranges)
       node.range = [tokStart, 0];
     return node;
