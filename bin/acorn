@@ -33,7 +33,7 @@ function help(status) {
   print("--compact            No whitespace is used in the AST output.");
   print("--silent             Do not output the AST, just return the exit status.");
   print("--version            Print the current version and exit.");
-  print("--help               Print this usage information and exit.");
+  print("-h|--help            Print this usage information and exit.");
 
   process.exit(status);
 }
@@ -58,7 +58,7 @@ for (var i = 2; i < process.argv.length; ++i) {
     console.log(acorn.version);
     process.exit(0);
   }
-  else if (arg === "--help") help(0);
+  else if (arg === "-h" || arg === "--help") help(0);
   else if (arg === "-") {
     useStdin = true;
     break;
