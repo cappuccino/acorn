@@ -3,8 +3,8 @@
     "description": "JavaScript (ECMAScript) and Objective-J parser with preprocessor.",
     "homepage": "https://github.com/cappuccino/acorn",
     "main": "acorn.js",
-    "version": "0.5.0",
-    "engines": {"node": ">=0.8.0"},
+    "version": "0.5.1",
+    "engines": {"node": ">=0.10.0"},
     "contributors": [
         {
             "name": "Marijn Haverbeke",
@@ -24,13 +24,13 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/cappuccino/acorn.git"
+        "url": "https://github.com/cappuccino/objj-acorn.git"
     },
-    "bugs": "https://github.com/cappuccino/acorn/issues",
+    "bugs": "https://github.com/cappuccino/objj-acorn/issues",
     "licenses": [
         {
             "type": "MIT",
-            "url": "http://marijnhaverbeke.nl/acorn/LICENSE"
+            "url": "https://github.com/cappuccino/objj-acorn/blob/master/LICENSE"
         }
     ],
     "scripts": {"test": "node test/run.js"},
@@ -40,6 +40,7 @@
         "ECMAScript",
         "Objective-J",
         "objj",
+        "Cappuccino",
         "parser",
         "preprocessor",
         "pre-processor",

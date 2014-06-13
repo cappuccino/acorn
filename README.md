@@ -2,7 +2,7 @@
 
 [acorn]: http://marijnhaverbeke.nl/acorn/
 [objj]: http://www.cappuccino-project.org/learn/objective-j.html
-[objj-compiler]: https://github.com/mrcarlberg/ObjJAcornCompiler
+[objj-compiler]: https://github.com/cappuccino/objj-compiler
 [range]: https://bugzilla.mozilla.org/show_bug.cgi?id=745678
 [mozapi]: https://developer.mozilla.org/en-US/docs/SpiderMonkey/Parser_API
 
