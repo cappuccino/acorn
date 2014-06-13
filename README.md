@@ -4,6 +4,7 @@
 [objj]: http://www.cappuccino-project.org/learn/objective-j.html
 [objj-compiler]: https://github.com/mrcarlberg/ObjJAcornCompiler
 [range]: https://bugzilla.mozilla.org/show_bug.cgi?id=745678
+[mozapi]: https://developer.mozilla.org/en-US/docs/SpiderMonkey/Parser_API
 
 A tiny, fast JavaScript and [Objective-J][objj] parser with a complete implementation of the GNU C preprocessor, written completely in JavaScript.
 
@@ -105,13 +106,39 @@ To use acorn in the browser, load `acorn.js` with a `<script>` tag. If you are u
 <script src="acorn.js" type="text/javascript"></script>
 ```
 
-Acorn is compatible with [AMD](https://github.com/amdjs/amdjs-api/wiki/AMD), so you may also use loaders like [require.js](http://www.requirejs.org) to load acorn in the browser.
+Acorn is compatible with [AMD](https://github.com/amdjs/amdjs-api/wiki/AMD), so you may also use loaders like [require.js](http://www.requirejs.org) to load acorn in the browser. When loaded without any kind of module management, a single global object `acorn` will be defined, and all the exported properties will be added to that.
 
-Once acorn is loaded, you may use acorn within your own scripts by calling `acorn.parse` as illustrated in the Node example above.
+### acorn object
+
+Once acorn is loaded, you may use acorn within your own scripts by calling functions or accessing attributes of the `acorn` object:
+
+##### parse(input, options)
+This is the main interface used to parse a JavaScript program. The `input` parameter is a string, `options` can be undefined or an object setting one or more of the options listed below. The return value will be an abstract syntax tree object as specified by the [Mozilla Parser API][mozapi].
+
+##### getLineInfo(input, offset)
+This function can be used to get a `{line, column}` object for a given program string and character offset.
+
+##### tokenize(input, options)
+This function exports a primitive interface to Acorn's tokenizer. The function takes an input string and options similar to `parse` (though only some options are meaningful here), and returns a function that can be called repeatedly to read a single token. The tokenizing function returns a `{start, end, type, value}` object (with added `startLoc` and `endLoc` properties when the `locations` option is enabled). This object will be reused (updated) for each token, so you can't count on it staying stable.
+
+##### tokTypes
+This attribute holds an object mapping names to the token type objects that end up in the `type` properties of tokens.
+
+## Errors
+
+When an error occurs, acorn throws a `SyntaxError` with the following attributes:
+
+- **message** – A descriptive message of the error. If the `lineNoInErrorMessage` option is on, the error message will end with `(line:column)`, where `line` is the one-based line number on which the error occurred, and `column` is the zero-based column within that line.
+- **line** – The one-based line number on which the error occurred.
+- **column** – The zero-based column number within `line`.
+- **lineStart** – The zero-based character position of the start of `line`.
+- **lineEnd** – The zero-based character position of the end of `line`.
+- **fileName** – The value of the `sourceFile` option passed in to acorn,
+    or `null` if none was passed in.
 
 ## Options
 
-The optional second parameter to the `parse` function is an options object. Acorn supports a number of options that control its behavior and its output.
+The optional second parameter to the `parse` and `tokenize` functions is an options object. Acorn supports a number of options that control its behavior and its output.
 
 - **ecmaVersion** – Indicates the ECMAScript version to parse. Must be either 3 or 5. This influences support for strict mode, the set of reserved words, and support for getters and setter. *Default*: 5
 
@@ -119,7 +146,7 @@ The optional second parameter to the `parse` function is an options object. Acor
 
 - **allowTrailingCommas** – If `false`, the parser will not allow trailing commas in array and object literals.
 
-- **forbidReserved** – If `true`, using a reserved word will generate an error. *Default*: `false`
+- **forbidReserved** – If `true`, using a reserved word as an identifier will generate an error. If `"everywhere"`, using a reserved word as a member of an object will generate an error. *Default*: `false`
 
 - **trackComments** – If `true`, the parser attaches "commentsBefore" and "commentsAfter" properties, which contain an array of comments, to each AST node that has comments before or after. A single comment may appear in both "commentsBefore" and "commentsAfter". *Default*: `false`
 
@@ -139,12 +166,14 @@ the whitespace in between. *Default*: `false`
 
     When the `locations` options is on, the `{line, column}` locations of the comment’s start and end are passed as two additional parameters. *Default*: `null`
 
-- **range** – Nodes have their start and end characters offsets recorded in "start" and "end" properties (directly on the node, rather than the "loc" object, which holds line/column data. To also add a [semi-standardized][range] "range" property holding a `[start, end]` array with the same numbers, set the `ranges` option to `true`. *Default*: `false`
+- **ranges** – Nodes have their start and end characters offsets recorded in "start" and "end" properties (directly on the node, rather than the "loc" object, which holds line/column data. To also add a [semi-standardized][range] "range" property holding a `[start, end]` array with the same numbers, set the `ranges` option to `true`. *Default*: `false`
 
 - **program** – It is possible to parse multiple files into a single AST by passing the tree produced by parsing the first file as the `program` option in subsequent parses. This will add the toplevel forms of the parsed file to the "Program" (top) node of an existing parse tree. *Default*: `null`
 
 - **sourceFile** – When the `locations` option is `true`, you can pass this option to record the source
-file in every node’s "loc" object. Note that the contents of this option are not examined or processed in any way; you are free to use whatever format you choose. When acorn is invoked via the command line, this option is set to the full path of the file being parsed. *Default*: `null`
+file in every node’s `loc` object. Note that the contents of this option are not examined or processed in any way; you are free to use whatever format you choose. When acorn is invoked via the command line, this option is set to the full path of the file being parsed. *Default*: `null`
+
+- **directSourceFile**: Like `sourceFile`, but the property will be added directly to the nodes, rather than to a `loc` object.
 
 - **objj** – When `true`, the parser recognizes and parses [Objective-J][objj] syntax. *Default*: `true`
 
@@ -301,15 +330,3 @@ For the supported features mentioned above, the acorn preprocessor implementatio
 
     if (isFoo('bar'))
     ```
-
-## Errors
-
-When an error occurs, acorn throws a `SyntaxError` with the following attributes:
-
-- **message** – A descriptive message of the error. If the `lineNoInErrorMessage` option is on, the error message will end with `(line:column)`, where `line` is the one-based line number on which the error occurred, and `column` is the zero-based column within that line.
-- **line** – The one-based line number on which the error occurred.
-- **column** – The zero-based column number within `line`.
-- **lineStart** – The zero-based character position of the start of `line`.
-- **lineEnd** – The zero-based character position of the end of `line`.
-- **fileName** – The value of the `sourceFile` option passed in to acorn,
-    or `null` if none was passed in.
