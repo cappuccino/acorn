@@ -4033,7 +4033,7 @@
       }
   }
 
-  // New's precedence is slightly tricky. It must allow its argument
+  // `new`'s precedence is slightly tricky. It must allow its argument
   // to be a `[]` or dot subscript expression, but not a call — at
   // least, not without wrapping it in parentheses. Thus, it uses the
 
@@ -4155,14 +4155,17 @@
     return finishNode(node, isStatement ? "FunctionDeclaration" : "FunctionExpression");
   }
 
-  // Parses a comma-separated list of expressions, and returns them as
-  // an array. `close` is the token type that ends the list, and
-  // `allowEmpty` can be turned on to allow subsequent commas with
-  // nothing in between them to be parsed as `null` (which is needed
-  // for array literals).
-  // This function is modified so the first expression is passed as a
-  // parameter. This is nessesary cause we need to check if it is a Objective-J
-  // message send expression ([expr mySelector:param1 withSecondParam:param2])
+  /*
+    Parse a comma-separated list of expressions, and return them as
+    an array. `close` is the token type that ends the list, and
+    `allowEmpty` can be turned on to allow subsequent commas with
+    nothing in between them to be parsed as `null` (which is needed
+    for array literals).
+
+    This function is modified so the first expression is passed as a
+    parameter. This is nessesary cause we need to check if it is a Objective-J
+    message send expression ([expr mySelector:param1 withSecondParam:param2])
+  */
 
   function parseExprList(close, firstExpr, allowTrailingComma, allowEmpty) {
     if (firstExpr && eat(close))
@@ -4183,8 +4186,9 @@
     return elts;
   }
 
-  // Parses a comma-separated list of <key>:<value> pairs and returns them as
+  // Parse a comma-separated list of <key>:<value> pairs and return them as
   // [arrayOfKeyExpressions, arrayOfValueExpressions].
+
   function parseDictionary() {
     expect(_braceL, "Expected '{' before dictionary");
 
@@ -4236,12 +4240,16 @@
     return finishNode(node, "Literal");
   }
 
-  // Parse the next token as an Objective-J typ.
-  // It can be 'id' followed by a optional protocol '<CPKeyValueBinding, ...>'
-  // It can be 'void' or 'id'
-  // It can be 'signed' or 'unsigned' followed by an optional 'char', 'byte', 'short', 'int' or 'long'
-  // It can be 'char', 'byte', 'short', 'int' or 'long'
-  // 'int' can be followed by an optinal 'long'. 'long' can be followed by an optional extra 'long'
+  /*
+    Parse the next token as an Objective-J type. It can be:
+
+      - 'id' followed by a optional protocol list '<CPKeyValueBinding, ...>'
+      - 'void' or 'id'
+      - 'signed' or 'unsigned'
+      - 'char', 'byte', 'short', 'int' or 'long', preceded optionally by 'signed' or 'unsigned'
+
+    'int' may be followed by 'long' or 'long long'.
+  */
 
   function parseObjectiveJType(startFrom) {
     var node = startFrom ? startNodeFrom(startFrom) : startNode();
@@ -4255,7 +4263,7 @@
       // Do nothing more if it is 'void'
       if (!eat(_void)) {
         if (eat(_id)) {
-          // Is it 'id' followed by a '<' parse protocols. Do nothing more if it is only 'id'
+          // If it is 'id' followed by a '<' parse protocols. Do nothing more if it is only 'id'.
           if (tokVal === '<') {
             var first = true,
                 protocols = [];
@@ -4303,7 +4311,7 @@
         }
       }
     }
-   return finishNode(node, "ObjectiveJType");
+    return finishNode(node, "ObjectiveJType");
   }
 
 });
