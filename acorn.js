@@ -3112,12 +3112,12 @@
           break;
 
         case _implementation:
-          if (options.objj) return parseImplementationStatement(node);
+          if (options.objj) return parseClassDeclaration(node);
           break;
 
         case _protocol:
           // If next token is a left parenthesis it is a ProtocolLiteral expression so bail out
-          if (options.objj && tokInput.charCodeAt(tokPos) !== 40) return parseProtocolStatement(node);
+          if (options.objj && tokInput.charCodeAt(tokPos) !== 40) return parseProtocolDeclaration(node);
           break;
 
         case _import:
@@ -3403,7 +3403,7 @@
     return finishNode(node, "InterfaceDeclarationStatement");
   }
 
-  function parseImplementationStatement(node) {
+  function parseClassDeclaration(node) {
     next();
     node.classname = parseIdent(true);
     if (eat(_colon))
@@ -3440,10 +3440,10 @@
       if (stmt)
         node.body.push(stmt);
     }
-    return finishNode(node, "ClassDeclarationStatement");
+    return finishNode(node, "ClassDeclaration");
   }
 
-  function parseProtocolStatement(node) {
+  function parseProtocolDeclaration(node) {
     next();
     node.protocolname = parseIdent(true);
     if (tokVal === '<') {
@@ -3470,7 +3470,7 @@
         (node.required || (node.required = [])).push(parseProtocolClassElement());
       }
     }
-    return finishNode(node, "ProtocolDeclarationStatement");
+    return finishNode(node, "ProtocolDeclaration");
   }
 
   function parseImportStatement(node) {
@@ -3614,7 +3614,7 @@
       inFunction = true; labels = [];
       element.body = parseBlock(true);
       inFunction = oldInFunc; labels = oldLabels;
-      return finishNode(element, "MethodDeclarationStatement");
+      return finishNode(element, "MethodDeclaration");
     } else
       return parseStatement([_end, _plusMin]);
   }
@@ -3623,7 +3623,7 @@
     var element = startNode();
     parseMethodDeclaration(element);
     semicolon();
-    return finishNode(element, "MethodDeclarationStatement");
+    return finishNode(element, "MethodDeclaration");
   }
 
   // Used for constructs like `switch` and `if` that insist on

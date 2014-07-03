@@ -290,7 +290,7 @@
   };
   base.Identifier = base.Literal = ignore;
 
-  base.ClassDeclarationStatement = function(node, st, c) {
+  base.ClassDeclaration = function(node, st, c) {
     if (node.ivardeclarations) for (var i = 0; i < node.ivardeclarations.length; ++i) {
       c(node.ivardeclarations[i], st, "IvarDeclaration");
     }
@@ -303,9 +303,9 @@
 
   base.IvarDeclaration = ignore;
 
-  base.MethodDeclarationStatement = ignore;
+  base.MethodDeclaration = ignore;
 
-  base.MethodDeclarationStatement = function(node, st, c) {
+  base.MethodDeclaration = function(node, st, c) {
     c(node.body, st, "Statement");
   };
 
