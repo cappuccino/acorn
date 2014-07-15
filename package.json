@@ -2,7 +2,7 @@
     "name": "objj-acorn",
     "description": "JavaScript (ECMAScript) and Objective-J parser with preprocessor.",
     "homepage": "https://github.com/cappuccino/acorn",
-    "main": "acorn.js",
+    "main": "./acorn.js",
     "version": "0.5.1",
     "engines": {"node": ">=0.10.0"},
     "contributors": [
