@@ -309,12 +309,12 @@
   // These are used to hold arrays of comments when
   // `options.trackComments` is true.
 
-  var tokCommentsBefore, tokCommentsAfter, lastTokCommentsAfter;
+  var tokComments, tokCommentsBefore, tokCommentsAfter, lastTokCommentsAfter;
 
   // These are used to hold arrays of spaces when
   // `options.trackSpaces` is true.
 
-  var tokSpacesBefore, tokSpacesAfter, lastTokSpacesAfter;
+  var tokSpaces, tokSpacesBefore, tokSpacesAfter, lastTokSpacesAfter;
 
   // Interal state for the tokenizer. To distinguish between division
   // operators and regular expressions, it remembers whether the last
@@ -323,7 +323,7 @@
   // division operator. See the `parseStatement` function for a
   // caveat.)
 
-  var tokRegexpAllowed, tokComments, tokSpaces;
+  var tokRegexpAllowed;
 
   // When `options.locations` is true, these are used to keep
   // track of the current line, and know when a new line has been
@@ -839,6 +839,9 @@
         break;
       }
     }
+
+    if (tokPos !== spaceStart)
+      (tokSpaces || (tokSpaces = [])).push(tokInput.slice(spaceStart, tokPos));
   }
 
   // ### Token reading
