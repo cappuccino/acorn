@@ -4008,8 +4008,7 @@
   function parseSelectorWithArguments(node, close) {
       var first = true,
           selectors = [],
-          args = [],
-          parameters = [];
+          args = [];
       node.selectors = selectors;
       node.arguments = args;
       for (;;) {
