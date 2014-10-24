@@ -197,16 +197,34 @@
 
   // A utility method on Array that clears all of the elements of an existing array.
   // This is currently the fastest way of doing it. For reference: http://jsperf.com/array-destroy/32
-  Array.prototype.clear = function() {
-    while (this.length > 0) {
-      this.shift();
-    }
-  };
+  if (!Array.prototype.hasOwnProperty("clear")) {
+    Object.defineProperty(
+        Array.prototype, "clear",
+        {
+          value: function() {
+            while (this.length > 0) {
+              this.shift();
+            }
+          },
+          configurable: false,
+          enumerable: false,
+          writable: false
+        });
+  }
 
   // Utility method to get the last element of an array
-  Array.prototype.last = function() {
-    return this[this.length - 1];
-  };
+  if (!Array.prototype.hasOwnProperty("last")) {
+    Object.defineProperty(
+        Array.prototype, "last",
+        {
+          value: function() {
+            return this[this.length - 1];
+          },
+          configurable: false,
+          enumerable: false,
+          writable: false
+        });
+  }
 
   // Acorn is organized as a tokenizer and a recursive-descent parser.
   // The `tokenize` export provides an interface to the tokenizer.
