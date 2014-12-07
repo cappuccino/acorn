@@ -299,6 +299,8 @@
     }
   };
 
+  base.TypeDefStatement = ignore;
+
   base.ImportStatement = ignore;
 
   base.IvarDeclaration = ignore;
