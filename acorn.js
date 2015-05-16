@@ -1386,7 +1386,8 @@
 
   var predefinedMacros = {
     "__OBJJ__": function() { return options.objj ? "1" : undefined; },
-    "__BROWSER__": function() { return (typeof(window) !== "undefined") ? "1" : undefined; }
+    "__BROWSER__": function() { return (typeof(window) !== "undefined") ? window.navigator.userAgent : undefined; },
+    "__NODE__": function() { return (typeof(process) !== "undefined") ? process.version : undefined; }
   };
 
   // Contains a hash of macro names to Macro objects.
