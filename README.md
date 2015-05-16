@@ -2,13 +2,13 @@
 
 [acorn]: http://marijnhaverbeke.nl/acorn/
 [objj]: http://www.cappuccino-project.org/learn/objective-j.html
-[objj-compiler]: https://github.com/cappuccino/objj-compiler
+[objjc]: https://github.com/cappuccino/objjc
 [range]: https://bugzilla.mozilla.org/show_bug.cgi?id=745678
 [mozapi]: https://developer.mozilla.org/en-US/docs/SpiderMonkey/Parser_API
 
 A tiny, fast JavaScript and [Objective-J][objj] parser with a complete implementation of the GNU C preprocessor, written completely in JavaScript.
 
-objj-acorn is an extension of the [acorn][acorn] JavaScript parser by Marijn Haverbeke, and is the foundation of the [Objective-J compiler][objj-compiler].
+objj-acorn is an extension of the [acorn][acorn] JavaScript parser by Marijn Haverbeke, and is the foundation of the [Objective-J compiler][objjc].
 
 ## Invoking
 
