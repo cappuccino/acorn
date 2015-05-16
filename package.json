@@ -1,46 +1,53 @@
 {
-    "name": "cappuccino-acorn",
-    "description": "JavaScript (ECMAScript) and Objective-J parser with preprocessor.",
-    "homepage": "https://github.com/cappuccino/cappuccino-acorn",
-    "main": "./acorn.js",
-    "version": "1.0.0-beta.1",
-    "engines": {"node": ">=0.10.0"},
-    "contributors": [
-        {
-            "name": "Marijn Haverbeke",
-            "email": "marijnh@gmail.com",
-            "web": "http://marijnhaverbeke.nl"
-        },
-        {
-            "name": "Martin Carlberg",
-            "email": "martin@carlberg.org",
-            "web": "http://carlberg.org"
-        },
-        {
-            "name": "Aparajita Fishman",
-            "email": "aparajita@aparajita.com",
-            "web": "http://www.aparajita.com"
-        }
-    ],
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/cappuccino/cappuccino-acorn.git"
+  "name": "objj-acorn",
+  "description": "JavaScript (ECMAScript) and Objective-J parser with preprocessor.",
+  "homepage": "https://github.com/cappuccino/objj-acorn",
+  "main": "./acorn.js",
+  "version": "1.0.0-beta.1",
+  "engines": {
+    "node": ">=0.10.0"
+  },
+  "contributors": [
+    {
+      "name": "Marijn Haverbeke",
+      "email": "marijnh@gmail.com",
+      "web": "http://marijnhaverbeke.nl"
     },
-    "bugs": "https://github.com/cappuccino/cappuccino-acorn/issues",
-    "license": "MIT",
-    "scripts": {"test": "node test/run.js"},
-    "bin": {"acorn": "./bin/acorn"},
-    "keywords": [
-        "JavaScript",
-        "ECMAScript",
-        "Objective-J",
-        "objj",
-        "acorn",
-        "Cappuccino",
-        "parser",
-        "preprocessor",
-        "pre-processor",
-        "pre processor",
-        "processor"
-   ]
+    {
+      "name": "Martin Carlberg",
+      "email": "martin@carlberg.org",
+      "web": "http://carlberg.org"
+    },
+    {
+      "name": "Aparajita Fishman",
+      "email": "aparajita@aparajita.com",
+      "web": "http://www.aparajita.com"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cappuccino/objj-acorn.git"
+  },
+  "bugs": "https://github.com/cappuccino/objj-acorn/issues",
+  "license": "MIT",
+  "scripts": {
+    "test": "node test/run.js"
+  },
+  "bin": {
+    "acorn": "./bin/acorn"
+  },
+  "keywords": [
+    "JavaScript",
+    "ECMAScript",
+    "Objective-J",
+    "objj",
+    "acorn",
+    "Cappuccino",
+    "parser",
+    "preprocessor",
+    "pre-processor",
+    "pre processor",
+    "processor"
+  ],
+  "dependencies": {}
 }
